@@ -440,6 +440,7 @@ namespace TeamApp
                 lstFrames.Items.Add(ToListText(record));
             }
             lstFrames.EndUpdate();
+            UpdateFrameListHorizontalExtent();
 
             trbFrame.Minimum = 0;
             trbFrame.Maximum = Math.Max(0, visibleFrames.Count - 1);
@@ -537,6 +538,24 @@ namespace TeamApp
             ApplyFilters(CurrentRecord()?.GlobalOrder);
         }
 
+        private void UpdateFrameListHorizontalExtent()
+        {
+            if (lstFrames.Items.Count == 0)
+            {
+                lstFrames.HorizontalExtent = 0;
+                return;
+            }
+
+            var maxWidth = 0;
+            foreach (var item in lstFrames.Items)
+            {
+                var text = item?.ToString() ?? string.Empty;
+                maxWidth = Math.Max(maxWidth, TextRenderer.MeasureText(text, lstFrames.Font).Width);
+            }
+
+            lstFrames.HorizontalExtent = Math.Max(lstFrames.ClientSize.Width, maxWidth + 24);
+        }
+
         private void lstFrames_DrawItem(object? sender, DrawItemEventArgs e)
         {
             if (e.Index < 0)
@@ -548,8 +567,13 @@ namespace TeamApp
             var text = lstFrames.Items[e.Index]?.ToString() ?? string.Empty;
             var isAnomaly = e.Index < visibleFrames.Count && visibleFrames[e.Index].IsAnomaly;
             var foreColor = isAnomaly ? Color.Red : e.ForeColor;
-            using var brush = new SolidBrush(foreColor);
-            e.Graphics.DrawString(text, e.Font ?? Font, brush, e.Bounds);
+            TextRenderer.DrawText(
+                e.Graphics,
+                text,
+                e.Font ?? Font,
+                e.Bounds,
+                foreColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             e.DrawFocusRectangle();
         }
 
@@ -675,16 +699,21 @@ namespace TeamApp
                 using var stream = File.OpenRead(imagePath);
                 using var source = Image.FromStream(stream);
                 var copy = new Bitmap(source);
-                var oldImage = picFrame.Image;
-                picFrame.Image = copy;
-                oldImage?.Dispose();
-                picFrame.Invalidate();
+                ReplaceFrameImage(copy);
             }
             catch (Exception ex)
             {
                 loadedImagePath = string.Empty;
                 DrawPlaceholder(picFrame, "이미지를 여는 중 오류가 발생했습니다.\n" + ex.Message);
             }
+        }
+
+        private void ReplaceFrameImage(Bitmap image)
+        {
+            var oldImage = picFrame.Image;
+            picFrame.Image = image;
+            oldImage?.Dispose();
+            picFrame.Invalidate();
         }
 
         private string ResolveImagePath(FrameRecord record)
@@ -914,12 +943,29 @@ namespace TeamApp
                     .ThenBy(record => record.GlobalOrder)
                     .ToList();
 
-                using var writer = new StreamWriter(catalogPath, false, Encoding.UTF8);
-                foreach (var record in rows)
+                var tempPath = catalogPath + ".tmp";
+                try
                 {
-                    var json = BuildCatalogJson(record);
-                    writer.WriteLine(json);
-                    record.RawJson = json;
+                    using (var writer = new StreamWriter(tempPath, false, Encoding.UTF8))
+                    {
+                        foreach (var record in rows)
+                        {
+                            var json = BuildCatalogJson(record);
+                            writer.WriteLine(json);
+                            record.RawJson = json;
+                        }
+                    }
+
+                    ReplaceFileAtomically(tempPath, catalogPath);
+                }
+                catch
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+
+                    throw;
                 }
             }
         }
@@ -1090,6 +1136,7 @@ namespace TeamApp
             var window = Math.Max(3, (int)numAnomalyWindow.Value);
             var sigma = Math.Max(1.0, (double)numAnomalySigma.Value);
             var minDelta = 0.15; // 최소 조향 튐 기준(Designer에 별도 입력란 없이 고정)
+            double? previousAngle = null;
 
             for (var i = 0; i < active.Count; i++)
             {
@@ -1099,35 +1146,38 @@ namespace TeamApp
                     continue;
                 }
 
+                var angle = record.Angle.Value;
+                var previousDelta = previousAngle.HasValue ? Math.Abs(angle - previousAngle.Value) : (double?)null;
+                previousAngle = angle;
+
                 var start = Math.Max(0, i - window);
                 var end = Math.Min(active.Count - 1, i + window);
-                var neighbors = new List<double>();
+                var count = 0;
+                var sum = 0.0;
+                var sumSquares = 0.0;
                 for (var j = start; j <= end; j++)
                 {
                     if (j == i || !active[j].Angle.HasValue)
                     {
                         continue;
                     }
-                    neighbors.Add(active[j].Angle!.Value);
+
+                    var value = active[j].Angle!.Value;
+                    count++;
+                    sum += value;
+                    sumSquares += value * value;
                 }
 
-                if (neighbors.Count < 3)
+                if (count < 3)
                 {
                     continue;
                 }
 
-                var mean = neighbors.Average();
-                var variance = neighbors.Select(value => Math.Pow(value - mean, 2)).Average();
-                var std = Math.Sqrt(Math.Max(variance, 0));
-                var deviation = Math.Abs(record.Angle.Value - mean);
+                var mean = sum / count;
+                var variance = Math.Max(0, (sumSquares / count) - (mean * mean));
+                var std = Math.Sqrt(variance);
+                var deviation = Math.Abs(angle - mean);
                 var band = Math.Max(sigma * std, minDelta);
-
-                double? previousDelta = null;
-                var previous = active.Take(i).LastOrDefault(item => item.Angle.HasValue);
-                if (previous != null && previous.Angle.HasValue)
-                {
-                    previousDelta = Math.Abs(record.Angle.Value - previous.Angle.Value);
-                }
 
                 record.MovingAverage = mean;
                 record.Volatility = std;
@@ -1141,11 +1191,11 @@ namespace TeamApp
                 }
             }
 
-            var count = active.Count(record => record.IsAnomaly);
-            lblAnomalyStatus.Text = $"감지 결과: 이상 주행 {count}개 / 전체 {active.Count}개";
+            var anomalyCount = active.Count(record => record.IsAnomaly);
+            lblAnomalyStatus.Text = $"감지 결과: 이상 주행 {anomalyCount}개 / 전체 {active.Count}개";
             if (writeLog)
             {
-                AppendLog($"이상 주행 탐지 완료: {count}개, window={window}, sigma={sigma:0.##}, minJump={minDelta:0.##}");
+                AppendLog($"이상 주행 탐지 완료: {anomalyCount}개, window={window}, sigma={sigma:0.##}, minJump={minDelta:0.##}");
             }
         }
 
@@ -1607,15 +1657,16 @@ namespace TeamApp
                 _ => Color.Gray
             };
 
-            using (var graphics = Graphics.FromImage(bitmap))
+            var editedBitmap = (Bitmap)bitmap.Clone();
+            using (var graphics = Graphics.FromImage(editedBitmap))
             using (var brush = new SolidBrush(color))
             {
                 graphics.FillRectangle(brush, rect);
             }
 
+            ReplaceFrameImage(editedBitmap);
             imageDirty = true;
             UpdateSelectionLabel();
-            picFrame.Invalidate();
             AppendLog($"이미지 영역 가리기 적용: {Path.GetFileName(loadedImagePath)} {rect}");
             SaveCurrentImageEdit(false);
         }
@@ -1641,13 +1692,16 @@ namespace TeamApp
             try
             {
                 using var replacement = Image.FromFile(dlg.FileName);
-                using var graphics = Graphics.FromImage(bitmap);
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.DrawImage(replacement, rect);
+                var editedBitmap = (Bitmap)bitmap.Clone();
+                using (var graphics = Graphics.FromImage(editedBitmap))
+                {
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    graphics.DrawImage(replacement, rect);
+                }
 
+                ReplaceFrameImage(editedBitmap);
                 imageDirty = true;
                 UpdateSelectionLabel();
-                picFrame.Invalidate();
                 AppendLog($"이미지 영역 교체 적용: {Path.GetFileName(loadedImagePath)} <- {Path.GetFileName(dlg.FileName)}");
                 SaveCurrentImageEdit(false);
             }
@@ -1697,9 +1751,18 @@ namespace TeamApp
                 }
 
                 var tempPath = loadedImagePath + ".editing.tmp";
-                bitmap.Save(tempPath, GetImageFormat(loadedImagePath));
-                File.Copy(tempPath, loadedImagePath, true);
-                File.Delete(tempPath);
+                try
+                {
+                    bitmap.Save(tempPath, GetImageFormat(loadedImagePath));
+                    ReplaceFileAtomically(tempPath, loadedImagePath);
+                }
+                finally
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
 
                 imageDirty = false;
                 UpdateSelectionLabel();
@@ -1819,6 +1882,17 @@ namespace TeamApp
             return Path.Combine(backupRoot, relative);
         }
 
+        private static void ReplaceFileAtomically(string sourcePath, string destinationPath)
+        {
+            var directory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.Move(sourcePath, destinationPath, true);
+        }
+
         private static ImageFormat GetImageFormat(string path)
         {
             var extension = Path.GetExtension(path).ToLowerInvariant();
@@ -1876,7 +1950,7 @@ namespace TeamApp
 
         private Task<int> RunShellCommandAsync(string command)
         {
-            var completion = new TaskCompletionSource<int>();
+            var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
             var shell = Environment.GetEnvironmentVariable("ComSpec");
             if (string.IsNullOrWhiteSpace(shell))
             {
@@ -1924,15 +1998,23 @@ namespace TeamApp
                 }
             };
 
-            if (!process.Start())
+            try
+            {
+                if (!process.Start())
+                {
+                    process.Dispose();
+                    throw new InvalidOperationException("프로세스를 시작하지 못했습니다.");
+                }
+
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                return completion.Task;
+            }
+            catch
             {
                 process.Dispose();
-                throw new InvalidOperationException("프로세스를 시작하지 못했습니다.");
+                throw;
             }
-
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            return completion.Task;
         }
 
         private void AppendLog(string text)
@@ -1968,7 +2050,12 @@ namespace TeamApp
         private static string ToListText(FrameRecord record)
         {
             var anomaly = record.IsAnomaly ? "!" : " ";
-            return $"{anomaly} {record.Index,6} | a={FormatForInput(record.Angle),8} | t={FormatForInput(record.Throttle),8} | {Path.GetFileName(record.ImageFile)}";
+            return $"{anomaly} {record.Index,5} | a={FormatCompact(record.Angle),7} | t={FormatCompact(record.Throttle),7}";
+        }
+
+        private static string FormatCompact(double? value)
+        {
+            return value.HasValue ? value.Value.ToString("0.###", CultureInfo.InvariantCulture) : "-";
         }
 
         private static string FormatForInput(double? value)
