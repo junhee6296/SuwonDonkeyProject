@@ -143,7 +143,9 @@ namespace TeamApp
 
                 if (allFrames.Count == 0)
                 {
-                    ClearCurrentFrame();
+                    // 빈 데이터셋을 새로 불러올 때 이전 프레임 목록/트랙바/그래프가 남지 않도록
+                    // 필터 적용 경로를 한 번 태워 모든 UI 상태를 일관되게 초기화한다.
+                    ApplyFilters(null);
                     MessageBox.Show("catalog 파일에서 유효한 프레임 데이터를 찾지 못했습니다.", "데이터 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
@@ -1930,11 +1932,13 @@ namespace TeamApp
                 .Replace("{IMAGES}", imagesFolder);
 
             btnTrain.Enabled = false;
-            AppendLog("> " + command);
 
             try
             {
-                var exitCode = await RunShellCommandAsync(command);
+                Directory.CreateDirectory(Path.Combine(rootFolder, "models"));
+                var preparedCommand = PrepareTrainingCommand(command);
+                AppendLog("> " + preparedCommand);
+                var exitCode = await RunCommandAsync(preparedCommand);
                 AppendLog($"프로세스 종료 코드: {exitCode}");
             }
             catch (Exception ex)
@@ -1948,73 +1952,582 @@ namespace TeamApp
             }
         }
 
-        private Task<int> RunShellCommandAsync(string command)
+        private string PrepareTrainingCommand(string command)
         {
-            var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!StartsWithDonkeyCommand(command))
+            {
+                return command;
+            }
+
+            if (TryResolveDonkeyExecutable(out var donkeyExecutable))
+            {
+                var remainder = GetCommandRemainderAfterDonkey(command);
+                var resolved = QuoteCommandToken(donkeyExecutable) + remainder;
+                if (!string.Equals(donkeyExecutable, "donkey", StringComparison.OrdinalIgnoreCase))
+                {
+                    AppendLog("donkey 실행파일 자동 연결: " + donkeyExecutable);
+                }
+
+                return resolved;
+            }
+
+            if (TryBuildWslDonkeyCommand(command, out var wslCommand))
+            {
+                AppendLog("Windows PATH에서 donkey를 찾지 못해 WSL donkey로 자동 전환합니다.");
+                return wslCommand;
+            }
+
+            throw new InvalidOperationException(BuildDonkeyMissingGuide());
+        }
+
+        private void btnCheckDonkey_Click(object? sender, EventArgs e)
+        {
+            AppendLog("DonkeyCar 학습 환경 진단 시작");
+
+            if (TryFindExecutableOnPath("donkey", out var pathDonkey))
+            {
+                AppendLog("PATH donkey: " + pathDonkey);
+            }
+            else
+            {
+                AppendLog("PATH donkey: 찾지 못함");
+            }
+
+            if (TryResolveDonkeyExecutable(out var resolvedDonkey))
+            {
+                AppendLog("사용 가능한 donkey 실행파일: " + resolvedDonkey);
+            }
+            else
+            {
+                AppendLog("사용 가능한 donkey 실행파일: 찾지 못함");
+            }
+
+            CheckPythonDonkeyCar("py");
+            CheckPythonDonkeyCar("python");
+
+            if (TryFindExecutableOnPath("wsl.exe", out var wslExe))
+            {
+                AppendLog("WSL: " + wslExe);
+                if (TryRunProbe(wslExe, "bash -lc \"command -v donkey\"", 5000, out var wslOutput, out var wslExit) && wslExit == 0)
+                {
+                    AppendLog("WSL donkey: " + OneLine(wslOutput));
+                }
+                else
+                {
+                    AppendLog("WSL donkey: 찾지 못함");
+                }
+            }
+            else
+            {
+                AppendLog("WSL: wsl.exe 찾지 못함");
+            }
+
+            AppendLog("진단 종료. donkey를 찾지 못하면 DonkeyCar가 설치된 Python/venv의 Scripts 폴더를 PATH에 추가하거나 학습 명령에 실행파일 전체 경로를 넣으세요.");
+        }
+
+        private void CheckPythonDonkeyCar(string pythonCommand)
+        {
+            const string code = "import donkeycar, sysconfig; print(sysconfig.get_path('scripts') or '')";
+            var args = "-c \"" + code.Replace("\"", "\\\"") + "\"";
+            if (TryRunProbe(pythonCommand, args, 5000, out var output, out var exitCode) && exitCode == 0)
+            {
+                var scriptsPath = OneLine(output);
+                AppendLog($"{pythonCommand}: donkeycar import 가능, Scripts={scriptsPath}");
+            }
+            else
+            {
+                AppendLog($"{pythonCommand}: donkeycar import 불가 또는 Python 실행 불가");
+            }
+        }
+
+        private static string BuildDonkeyMissingGuide()
+        {
+            return "donkey 명령을 찾지 못했습니다.\n\n" +
+                   "해결 방법:\n" +
+                   "1) DonkeyCar가 설치된 Python/venv/conda 환경의 Scripts 폴더를 PATH에 추가하세요.\n" +
+                   "2) 또는 학습 명령의 donkey 대신 전체 경로를 넣으세요. 예: \"C:\\...\\Scripts\\donkey.exe\" train ...\n" +
+                   "3) 가상환경을 써야 하면 명령을 call \"...\\activate.bat\" && donkey train ... 형태로 바꿔 실행하세요.\n" +
+                   "4) WSL에 DonkeyCar가 설치되어 있으면 wsl.exe와 WSL 내부 donkey를 자동으로 사용합니다.";
+        }
+
+        private static bool StartsWithDonkeyCommand(string command)
+        {
+            var trimmed = command.TrimStart();
+            return trimmed.Equals("donkey", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("donkey ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("donkey\t", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetCommandRemainderAfterDonkey(string command)
+        {
+            var start = command.Length - command.TrimStart().Length;
+            var index = start + "donkey".Length;
+            return index < command.Length ? command.Substring(index) : string.Empty;
+        }
+
+        private bool TryResolveDonkeyExecutable(out string donkeyExecutable)
+        {
+            donkeyExecutable = string.Empty;
+
+            var envDonkey = Environment.GetEnvironmentVariable("DONKEY_EXE");
+            if (!string.IsNullOrWhiteSpace(envDonkey) && File.Exists(envDonkey))
+            {
+                donkeyExecutable = envDonkey;
+                return true;
+            }
+
+            if (TryFindExecutableOnPath("donkey", out donkeyExecutable))
+            {
+                return true;
+            }
+
+            foreach (var candidate in EnumerateDonkeyExecutableCandidates())
+            {
+                if (File.Exists(candidate))
+                {
+                    donkeyExecutable = candidate;
+                    return true;
+                }
+            }
+
+            if (TryFindDonkeyFromPython("py", out donkeyExecutable))
+            {
+                return true;
+            }
+
+            if (TryFindDonkeyFromPython("python", out donkeyExecutable))
+            {
+                return true;
+            }
+
+            donkeyExecutable = string.Empty;
+            return false;
+        }
+
+        private static bool TryFindDonkeyFromPython(string pythonCommand, out string donkeyExecutable)
+        {
+            donkeyExecutable = string.Empty;
+            const string code = "import donkeycar, sysconfig; print(sysconfig.get_path('scripts') or '')";
+            var args = "-c \"" + code.Replace("\"", "\\\"") + "\"";
+            if (!TryRunProbe(pythonCommand, args, 5000, out var output, out var exitCode) || exitCode != 0)
+            {
+                return false;
+            }
+
+            var scriptsPath = OneLine(output);
+            if (string.IsNullOrWhiteSpace(scriptsPath) || !Directory.Exists(scriptsPath))
+            {
+                return false;
+            }
+
+            foreach (var name in DonkeyExecutableNames())
+            {
+                var candidate = Path.Combine(scriptsPath, name);
+                if (File.Exists(candidate))
+                {
+                    donkeyExecutable = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private IEnumerable<string> EnumerateDonkeyExecutableCandidates()
+        {
+            var directories = new List<string>();
+            void AddDirectory(string? directory)
+            {
+                if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory) && !directories.Contains(directory, StringComparer.OrdinalIgnoreCase))
+                {
+                    directories.Add(directory);
+                }
+            }
+
+            void AddScriptsUnder(string? baseDirectory)
+            {
+                if (string.IsNullOrWhiteSpace(baseDirectory))
+                {
+                    return;
+                }
+
+                AddDirectory(Path.Combine(baseDirectory, "Scripts"));
+                AddDirectory(Path.Combine(baseDirectory, ".venv", "Scripts"));
+                AddDirectory(Path.Combine(baseDirectory, "venv", "Scripts"));
+                AddDirectory(Path.Combine(baseDirectory, "env", "Scripts"));
+            }
+
+            AddScriptsUnder(rootFolder);
+            AddScriptsUnder(dataFolder);
+            AddDirectory(Path.Combine(Environment.CurrentDirectory, ".venv", "Scripts"));
+            AddDirectory(Path.Combine(Environment.CurrentDirectory, "venv", "Scripts"));
+
+            var condaPrefix = Environment.GetEnvironmentVariable("CONDA_PREFIX");
+            AddDirectory(Path.Combine(condaPrefix ?? string.Empty, "Scripts"));
+
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            foreach (var condaRootName in new[] { "anaconda3", "miniconda3", "mambaforge", "miniforge3" })
+            {
+                var condaRoot = Path.Combine(userProfile, condaRootName);
+                AddDirectory(Path.Combine(condaRoot, "Scripts"));
+                var envRoot = Path.Combine(condaRoot, "envs");
+                if (Directory.Exists(envRoot))
+                {
+                    foreach (var env in Directory.GetDirectories(envRoot))
+                    {
+                        AddDirectory(Path.Combine(env, "Scripts"));
+                    }
+                }
+            }
+
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var pythonRoot = Path.Combine(localAppData, "Programs", "Python");
+            if (Directory.Exists(pythonRoot))
+            {
+                foreach (var python in Directory.GetDirectories(pythonRoot, "Python*"))
+                {
+                    AddDirectory(Path.Combine(python, "Scripts"));
+                }
+            }
+
+            foreach (var directory in directories)
+            {
+                foreach (var name in DonkeyExecutableNames())
+                {
+                    yield return Path.Combine(directory, name);
+                }
+            }
+        }
+
+        private static string[] DonkeyExecutableNames()
+        {
+            return new[] { "donkey.exe", "donkey.cmd", "donkey.bat", "donkey" };
+        }
+
+        private static bool TryFindExecutableOnPath(string commandName, out string executablePath)
+        {
+            executablePath = string.Empty;
+            var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            var extensions = new[] { string.Empty, ".exe", ".cmd", ".bat" };
+            var names = Path.HasExtension(commandName)
+                ? new[] { commandName }
+                : extensions.Select(extension => commandName + extension).ToArray();
+
+            foreach (var rawDirectory in path.Split(Path.PathSeparator))
+            {
+                var directory = rawDirectory.Trim('"', ' ');
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    continue;
+                }
+
+                foreach (var name in names)
+                {
+                    var candidate = Path.Combine(directory, name);
+                    if (File.Exists(candidate))
+                    {
+                        executablePath = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryBuildWslDonkeyCommand(string command, out string wslCommand)
+        {
+            wslCommand = string.Empty;
+            if (!TryFindExecutableOnPath("wsl.exe", out var wslExe))
+            {
+                return false;
+            }
+
+            if (!TryRunProbe(wslExe, "bash -lc \"command -v donkey\"", 5000, out _, out var exitCode) || exitCode != 0)
+            {
+                return false;
+            }
+
+            var bashCommand = ConvertQuotedWindowsPathsToBash(command);
+            wslCommand = QuoteCommandToken(wslExe) + " bash -lc \"" + bashCommand.Replace("\"", "\\\"") + "\"";
+            return true;
+        }
+
+        private static string ConvertQuotedWindowsPathsToBash(string command)
+        {
+            var builder = new StringBuilder();
+            for (var i = 0; i < command.Length; i++)
+            {
+                if (command[i] != '"')
+                {
+                    builder.Append(command[i]);
+                    continue;
+                }
+
+                var end = command.IndexOf('"', i + 1);
+                if (end < 0)
+                {
+                    builder.Append(command.Substring(i));
+                    break;
+                }
+
+                var content = command.Substring(i + 1, end - i - 1);
+                if (TryConvertWindowsPathToWsl(content, out var wslPath))
+                {
+                    builder.Append('\'').Append(EscapeBashSingleQuoted(wslPath)).Append('\'');
+                }
+                else
+                {
+                    builder.Append('\'').Append(EscapeBashSingleQuoted(content)).Append('\'');
+                }
+
+                i = end;
+            }
+
+            return builder.ToString();
+        }
+
+        private static bool TryConvertWindowsPathToWsl(string path, out string wslPath)
+        {
+            wslPath = string.Empty;
+            if (path.Length < 3 || path[1] != ':' || (path[2] != '\\' && path[2] != '/'))
+            {
+                return false;
+            }
+
+            var drive = char.ToLowerInvariant(path[0]);
+            var rest = path.Substring(3).Replace('\\', '/');
+            wslPath = "/mnt/" + drive + "/" + rest;
+            return true;
+        }
+
+        private static string EscapeBashSingleQuoted(string value)
+        {
+            return value.Replace("'", "'\\''");
+        }
+
+        private static string QuoteCommandToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "\"\"";
+            }
+
+            return value.Any(char.IsWhiteSpace) ? "\"" + value.Replace("\"", "\\\"") + "\"" : value;
+        }
+
+        private static bool RequiresShell(string command)
+        {
+            return command.Contains("&&", StringComparison.Ordinal) ||
+                   command.Contains("||", StringComparison.Ordinal) ||
+                   command.Contains("|", StringComparison.Ordinal) ||
+                   command.Contains(">", StringComparison.Ordinal) ||
+                   command.Contains("<", StringComparison.Ordinal) ||
+                   command.TrimStart().StartsWith("call ", StringComparison.OrdinalIgnoreCase) ||
+                   command.TrimStart().StartsWith("set ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private Task<int> RunCommandAsync(string command)
+        {
+            var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
+            if (!RequiresShell(command) && TryCreateDirectProcessStartInfo(command, workingDirectory, out var directStartInfo))
+            {
+                return RunProcessAsync(directStartInfo);
+            }
+
             var shell = Environment.GetEnvironmentVariable("ComSpec");
             if (string.IsNullOrWhiteSpace(shell))
             {
                 shell = "cmd.exe";
             }
 
-            var process = new Process
+            var shellStartInfo = new ProcessStartInfo
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = shell,
-                    Arguments = "/C " + command,
-                    WorkingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                },
-                EnableRaisingEvents = true
+                FileName = shell,
+                Arguments = "/D /S /C " + command,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
             };
 
-            process.OutputDataReceived += (_, args) =>
+            return RunProcessAsync(shellStartInfo);
+        }
+
+        private static bool TryCreateDirectProcessStartInfo(string command, string workingDirectory, out ProcessStartInfo startInfo)
+        {
+            startInfo = null!;
+            var tokens = SplitCommandLine(command);
+            if (tokens.Count == 0)
             {
-                if (!string.IsNullOrWhiteSpace(args.Data))
-                {
-                    AppendLog(args.Data);
-                }
+                return false;
+            }
+
+            var fileName = tokens[0];
+            var extension = Path.GetExtension(fileName);
+            if (string.Equals(extension, ".cmd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(extension, ".bat", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
             };
-            process.ErrorDataReceived += (_, args) =>
+
+            for (var i = 1; i < tokens.Count; i++)
             {
-                if (!string.IsNullOrWhiteSpace(args.Data))
-                {
-                    AppendLog("ERR: " + args.Data);
-                }
-            };
-            process.Exited += (_, _) =>
+                startInfo.ArgumentList.Add(tokens[i]);
+            }
+
+            return true;
+        }
+
+        private static List<string> SplitCommandLine(string command)
+        {
+            var tokens = new List<string>();
+            var current = new StringBuilder();
+            var inQuotes = false;
+
+            for (var i = 0; i < command.Length; i++)
             {
-                try
+                var c = command[i];
+                if (c == '"')
                 {
-                    completion.TrySetResult(process.ExitCode);
+                    inQuotes = !inQuotes;
+                    continue;
                 }
-                finally
+
+                if (char.IsWhiteSpace(c) && !inQuotes)
                 {
-                    process.Dispose();
+                    if (current.Length > 0)
+                    {
+                        tokens.Add(current.ToString());
+                        current.Clear();
+                    }
+                    continue;
                 }
+
+                current.Append(c);
+            }
+
+            if (current.Length > 0)
+            {
+                tokens.Add(current.ToString());
+            }
+
+            return tokens;
+        }
+
+        private async Task<int> RunProcessAsync(ProcessStartInfo startInfo)
+        {
+            using var process = new Process
+            {
+                StartInfo = startInfo
             };
 
             try
             {
                 if (!process.Start())
                 {
-                    process.Dispose();
                     throw new InvalidOperationException("프로세스를 시작하지 못했습니다.");
                 }
-
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                return completion.Task;
             }
             catch
             {
                 process.Dispose();
                 throw;
             }
+
+            var outputTask = Task.Run(() => ReadProcessStream(process.StandardOutput, false));
+            var errorTask = Task.Run(() => ReadProcessStream(process.StandardError, true));
+
+            await Task.Run(() => process.WaitForExit()).ConfigureAwait(false);
+            await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false);
+            return process.ExitCode;
+        }
+
+        private void ReadProcessStream(StreamReader reader, bool isError)
+        {
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                AppendLog(isError ? "ERR: " + line : line);
+            }
+        }
+
+        private static bool TryRunProbe(string fileName, string arguments, int timeoutMilliseconds, out string output, out int exitCode)
+        {
+            output = string.Empty;
+            exitCode = -1;
+
+            try
+            {
+                if (!Path.IsPathRooted(fileName) && !Path.HasExtension(fileName) && TryFindExecutableOnPath(fileName, out var resolvedFileName))
+                {
+                    fileName = resolvedFileName;
+                }
+
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = fileName,
+                        Arguments = arguments,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                if (!process.Start())
+                {
+                    return false;
+                }
+
+                if (!process.WaitForExit(timeoutMilliseconds))
+                {
+                    try
+                    {
+                        process.Kill(true);
+                    }
+                    catch
+                    {
+                        // probe 정리 실패는 무시한다.
+                    }
+
+                    return false;
+                }
+
+                output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                exitCode = process.ExitCode;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string OneLine(string text)
+        {
+            return (text ?? string.Empty)
+                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? string.Empty;
         }
 
         private void AppendLog(string text)
