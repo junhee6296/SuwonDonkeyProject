@@ -27,6 +27,7 @@ namespace TeamApp
                     txtName.Text = lines[0];
                     txtSchool.Text = lines[1];
                     txtClass.Text = lines[2];
+                    txtGGa.Text = lines[3];
                 }
             }
             catch (Exception ex)
