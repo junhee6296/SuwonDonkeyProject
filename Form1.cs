@@ -34,6 +34,11 @@ namespace TeamApp
         private string imagesFolder = string.Empty;
         private string trainingDataPathOverride = string.Empty;
         private string trainingModelPathOverride = string.Empty;
+        private string trainingSshPassword = string.Empty;
+        private bool trainingUseSshPasswordInput;
+        private bool trainingCommandGenerated;
+        private const string TrainingCommandPlaceholder = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
+        private const string SshPasswordPlaceholder = "{SSH_PASSWORD}";
         private readonly HashSet<int> checkedFrameOrders = new HashSet<int>();
         private int currentVisibleIndex = -1;
 
@@ -68,9 +73,21 @@ namespace TeamApp
             chkAnomalyOnly.CheckedChanged += chkAnomalyOnly_CheckedChanged;
             chkDeletedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
             chkEditedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
+            btnClearCheckedFrames.Text = "전체 해제";
+            btnDelete.Text = "이미지 삭제";
+            btnUndo.Text = "삭제 이미지 복구";
+            chkDeletedOnly.Text = "삭제 이미지만";
+            chkEditedOnly.Text = "교체/편집만";
+            btnCheckDonkey.Visible = false;
+            lstFrames.CheckOnClick = false;
+            lstFrames.ResolveVisualState = index => index >= 0 && index < visibleFrames.Count
+                ? new FrameListVisualState(visibleFrames[index].Deleted, visibleFrames[index].Edited, visibleFrames[index].IsAnomaly)
+                : FrameListVisualState.Normal;
+            UpdateAutoPlaySpeedLabel();
+            ResetTrainingCommandState();
             Resize += (_, _) => ApplyResponsiveLayout();
 
-            autoPlayTimer.Interval = 250;
+            autoPlayTimer.Interval = GetAutoPlayInterval();
             autoPlayTimer.Tick += (_, _) => MoveSelection(1, true);
 
             DrawPlaceholder(picFrame, "폴더를 열면 이미지가 표시됩니다.\n이미지 편집은 '이미지 / 프레임 탐색 · 편집' 영역에서 사용하세요.");
@@ -109,15 +126,15 @@ namespace TeamApp
                 }
 
                 btnOpenFolder.SetBounds(margin, top, 96, topHeight);
-                btnOpenDataFolder.SetBounds(clientWidth - margin - 190, top, 190, topHeight);
+                btnOpenDataFolder.SetBounds(clientWidth - margin - 210, top, 210, topHeight);
                 txtSelectedFolder.SetBounds(btnOpenFolder.Right + gap, top + 3, Math.Max(220, btnOpenDataFolder.Left - btnOpenFolder.Right - gap * 2), 23);
 
                 grpList.SetBounds(margin, contentTop, leftWidth, contentHeight);
                 grpPreview.SetBounds(grpList.Right + gap, contentTop, Math.Max(360, centerWidth), contentHeight);
                 var rightX = grpPreview.Right + gap;
-                grpFilter.SetBounds(rightX, contentTop, rightWidth, 245);
+                grpFilter.SetBounds(rightX, contentTop, rightWidth, 285);
                 grpAnomaly.SetBounds(rightX, grpFilter.Bottom + gap, rightWidth, 190);
-                grpTrain.SetBounds(rightX, grpAnomaly.Bottom + gap, rightWidth, 210);
+                grpTrain.SetBounds(rightX, grpAnomaly.Bottom + gap, rightWidth, 220);
                 grpLog.SetBounds(rightX, grpTrain.Bottom + gap, rightWidth, Math.Max(100, contentTop + contentHeight - (grpTrain.Bottom + gap)));
 
                 LayoutFrameList();
@@ -137,8 +154,9 @@ namespace TeamApp
         {
             var w = grpList.ClientSize.Width;
             var h = grpList.ClientSize.Height;
-            btnCheckAllFrames.SetBounds(10, 24, Math.Max(96, (w - 30) / 2), 28);
-            btnClearCheckedFrames.SetBounds(btnCheckAllFrames.Right + 8, 24, Math.Max(96, w - btnCheckAllFrames.Right - 18), 28);
+            var selectionButtonWidth = Math.Max(96, (w - 28) / 2);
+            btnCheckAllFrames.SetBounds(10, 24, selectionButtonWidth, 28);
+            btnClearCheckedFrames.SetBounds(btnCheckAllFrames.Right + 8, 24, selectionButtonWidth, 28);
             lstFrames.SetBounds(10, 58, Math.Max(120, w - 20), Math.Max(140, h - 150));
             lblStats.SetBounds(10, lstFrames.Bottom + 8, Math.Max(120, w - 20), Math.Max(56, h - lstFrames.Bottom - 14));
             UpdateFrameListHorizontalExtent();
@@ -152,7 +170,8 @@ namespace TeamApp
             var graphHeight = 70;
             var bottomInfoHeight = 176;
             var editHeight = 78;
-            var pictureHeight = Math.Max(220, h - 24 - editHeight - 20 - 45 - 36 - bottomInfoHeight - graphHeight);
+            var deleteHeight = 64;
+            var pictureHeight = Math.Max(190, h - 24 - editHeight - deleteHeight - 22 - 45 - 36 - bottomInfoHeight - graphHeight);
 
             picFrame.SetBounds(12, 22, innerW, pictureHeight);
             grpImageEdit.SetBounds(12, picFrame.Bottom + 8, innerW, editHeight);
@@ -165,20 +184,27 @@ namespace TeamApp
             btnClearSelection.SetBounds(btnReplaceRegion.Right + 6, btnY, buttonW, 27);
             btnRestoreImage.SetBounds(btnClearSelection.Right + 6, btnY, Math.Max(90, grpImageEdit.ClientSize.Width - btnClearSelection.Right - 16), 27);
 
-            pnlTimeline.SetBounds(12, grpImageEdit.Bottom + 8, innerW, 18);
+            grpDeleteOps.SetBounds(12, grpImageEdit.Bottom + 8, innerW, deleteHeight);
+            var deleteButtonW = Math.Max(120, (grpDeleteOps.ClientSize.Width - 30) / 2);
+            btnDelete.SetBounds(10, 24, deleteButtonW, 28);
+            btnUndo.SetBounds(btnDelete.Right + 10, 24, deleteButtonW, 28);
+
+            pnlTimeline.SetBounds(12, grpDeleteOps.Bottom + 8, innerW, 18);
             trbFrame.SetBounds(12, pnlTimeline.Bottom + 2, innerW, 45);
 
             var btnTop = trbFrame.Bottom + 2;
-            var gap = 6;
-            var buttonWidth = Math.Max(42, (innerW - gap * 5) / 6);
+            var gap = 8;
+            var buttonWidth = Math.Max(54, (innerW - gap * 3) / 4);
             btnPrev.SetBounds(12, btnTop, buttonWidth, 30);
             btnPlay.SetBounds(btnPrev.Right + gap, btnTop, buttonWidth, 30);
             btnNext.SetBounds(btnPlay.Right + gap, btnTop, buttonWidth, 30);
-            btnUndo.SetBounds(btnNext.Right + gap, btnTop, buttonWidth, 30);
-            btnDelete.SetBounds(btnUndo.Right + gap, btnTop, buttonWidth, 30);
-            btnSave.SetBounds(btnDelete.Right + gap, btnTop, buttonWidth, 30);
+            btnSave.SetBounds(btnNext.Right + gap, btnTop, buttonWidth, 30);
 
-            var infoTop = btnTop + 38;
+            var speedTop = btnTop + 36;
+            lblPlaySpeed.SetBounds(btnPlay.Left, speedTop + 4, Math.Max(110, buttonWidth), 20);
+            trbPlaySpeed.SetBounds(lblPlaySpeed.Right + 6, speedTop, Math.Max(120, btnSave.Right - lblPlaySpeed.Right - 6), 35);
+
+            var infoTop = speedTop + 38;
             lblCurrentIndex.SetBounds(12, infoTop, innerW, 20);
             lblCurrentImage.SetBounds(12, infoTop + 23, innerW, 20);
             lblCurrentMode.SetBounds(12, infoTop + 46, innerW, 20);
@@ -196,19 +222,23 @@ namespace TeamApp
         private void LayoutFilterPanel()
         {
             var w = grpFilter.ClientSize.Width;
+            var valueLeft = Math.Max(140, w - 230);
+            var maxLeft = Math.Max(valueLeft + 110, w - 108);
+
             chkThrottlePositive.SetBounds(14, 28, 170, 24);
             chkExcludeAngleZero.SetBounds(14, 56, 120, 24);
             chkAngleRange.SetBounds(14, 90, 110, 24);
             chkThrottleRange.SetBounds(14, 124, 120, 24);
-            chkAnomalyOnly.SetBounds(14, 156, 160, 24);
-            chkDeletedOnly.SetBounds(180, 156, 130, 24);
-            chkEditedOnly.SetBounds(180, 184, 130, 24);
-            lblRangeMin.SetBounds(Math.Max(130, w - 250), 72, 50, 18);
-            lblRangeMax.SetBounds(Math.Max(240, w - 130), 72, 50, 18);
-            numAngleMin.SetBounds(lblRangeMin.Left, 90, 95, 23);
-            numAngleMax.SetBounds(lblRangeMax.Left, 90, 95, 23);
-            numThrottleMin.SetBounds(lblRangeMin.Left, 124, 95, 23);
-            numThrottleMax.SetBounds(lblRangeMax.Left, 124, 95, 23);
+            chkAnomalyOnly.SetBounds(14, 156, 170, 24);
+            chkDeletedOnly.SetBounds(14, 186, 170, 24);
+            chkEditedOnly.SetBounds(14, 216, 170, 24);
+
+            lblRangeMin.SetBounds(valueLeft, 72, 50, 18);
+            lblRangeMax.SetBounds(maxLeft, 72, 50, 18);
+            numAngleMin.SetBounds(valueLeft, 90, 95, 23);
+            numAngleMax.SetBounds(maxLeft, 90, 95, 23);
+            numThrottleMin.SetBounds(valueLeft, 124, 95, 23);
+            numThrottleMax.SetBounds(maxLeft, 124, 95, 23);
             btnApplyFilter.SetBounds(14, grpFilter.ClientSize.Height - 40, 100, 30);
             btnClearFilter.SetBounds(122, grpFilter.ClientSize.Height - 40, 110, 30);
         }
@@ -230,13 +260,16 @@ namespace TeamApp
         private void LayoutTrainPanel()
         {
             var w = grpTrain.ClientSize.Width;
-            lblCommand.SetBounds(14, 25, 100, 20);
-            txtTrainCommand.SetBounds(14, 48, Math.Max(180, w - 28), Math.Max(58, grpTrain.ClientSize.Height - 132));
+            lblCommand.SetBounds(14, 25, 120, 20);
+            chkManualCommandEdit.SetBounds(Math.Max(150, w - 120), 23, 105, 24);
+            txtTrainCommand.SetBounds(14, 48, Math.Max(180, w - 28), Math.Max(70, grpTrain.ClientSize.Height - 150));
             var btnTop = txtTrainCommand.Bottom + 8;
-            btnTrain.SetBounds(14, btnTop, 90, 30);
-            btnCheckDonkey.SetBounds(112, btnTop, 90, 30);
-            btnTrainingPaths.SetBounds(210, btnTop, Math.Max(130, w - 224), 30);
-            lblHint.SetBounds(14, btnTop + 36, Math.Max(180, w - 28), 34);
+            btnCheckDonkey.Visible = false;
+            btnCheckDonkey.SetBounds(0, 0, 1, 1);
+            var trainButtonWidth = Math.Max(110, (w - 38) / 2);
+            btnTrainingPaths.SetBounds(14, btnTop, trainButtonWidth, 30);
+            btnTrain.SetBounds(btnTrainingPaths.Right + 10, btnTop, trainButtonWidth, 30);
+            lblHint.SetBounds(14, btnTop + 36, Math.Max(180, w - 28), Math.Max(34, grpTrain.ClientSize.Height - btnTop - 40));
         }
 
         private void LayoutLogPanel()
@@ -622,6 +655,8 @@ namespace TeamApp
             }
             lstFrames.EndUpdate();
             UpdateFrameListHorizontalExtent();
+            lstFrames.Invalidate();
+            lstFrames.Refresh();
 
             trbFrame.Minimum = 0;
             trbFrame.Maximum = Math.Max(0, visibleFrames.Count - 1);
@@ -652,14 +687,15 @@ namespace TeamApp
 
         private bool PassesFilter(FrameRecord record)
         {
-            if (chkDeletedOnly.Checked && !record.Deleted)
+            if (chkDeletedOnly.Checked || chkEditedOnly.Checked)
             {
-                return false;
-            }
-
-            if (chkEditedOnly.Checked && !record.Edited)
-            {
-                return false;
+                var matchesStatusFilter =
+                    (chkDeletedOnly.Checked && record.Deleted) ||
+                    (chkEditedOnly.Checked && record.Edited);
+                if (!matchesStatusFilter)
+                {
+                    return false;
+                }
             }
 
             if (chkAnomalyOnly.Checked && !record.IsAnomaly)
@@ -813,7 +849,7 @@ namespace TeamApp
 
         private void lstFrames_DrawItem(object? sender, DrawItemEventArgs e)
         {
-            if (e.Index < 0)
+            if (e.Index < 0 || e.Index >= lstFrames.Items.Count)
             {
                 return;
             }
@@ -823,19 +859,19 @@ namespace TeamApp
             var backColor = selected ? SystemColors.Highlight : e.BackColor;
             var foreColor = selected ? SystemColors.HighlightText : e.ForeColor;
 
-            if (!selected && record != null)
+            if (record != null)
             {
                 if (record.Deleted)
                 {
-                    backColor = Color.MistyRose;
-                    foreColor = Color.DarkRed;
+                    backColor = selected ? Color.IndianRed : Color.LightCoral;
+                    foreColor = selected ? Color.White : Color.DarkRed;
                 }
                 else if (record.Edited)
                 {
-                    backColor = Color.Honeydew;
-                    foreColor = Color.DarkGreen;
+                    backColor = selected ? Color.SeaGreen : Color.LightGreen;
+                    foreColor = selected ? Color.White : Color.DarkGreen;
                 }
-                else if (record.IsAnomaly)
+                else if (!selected && record.IsAnomaly)
                 {
                     foreColor = Color.Red;
                 }
@@ -924,6 +960,30 @@ namespace TeamApp
             lstFrames.SelectedIndex = index;
         }
 
+        private int GetAutoPlayInterval()
+        {
+            var value = trbPlaySpeed == null ? 4 : Math.Max(1, trbPlaySpeed.Value);
+            // 오른쪽으로 갈수록 빠르게 재생: 1=1000ms, 20=50ms
+            return Math.Max(50, 1050 - value * 50);
+        }
+
+        private void UpdateAutoPlaySpeedLabel()
+        {
+            if (lblPlaySpeed == null)
+            {
+                return;
+            }
+
+            var interval = GetAutoPlayInterval();
+            lblPlaySpeed.Text = $"재생속도 {interval}ms";
+            autoPlayTimer.Interval = interval;
+        }
+
+        private void trbPlaySpeed_Scroll(object? sender, EventArgs e)
+        {
+            UpdateAutoPlaySpeedLabel();
+        }
+
         private void btnPlay_Click(object? sender, EventArgs e)
         {
             if (visibleFrames.Count == 0)
@@ -1002,6 +1062,26 @@ namespace TeamApp
         }
 
         private string ResolveImagePath(FrameRecord record)
+        {
+            var originalPath = ResolveOriginalImagePath(record);
+            if (File.Exists(originalPath))
+            {
+                return originalPath;
+            }
+
+            if (record.Deleted)
+            {
+                var backupPath = ResolveDeletedBackupPath(record);
+                if (!string.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath))
+                {
+                    return backupPath;
+                }
+            }
+
+            return originalPath;
+        }
+
+        private string ResolveOriginalImagePath(FrameRecord record)
         {
             if (string.IsNullOrWhiteSpace(record.ImageFile))
             {
@@ -1100,16 +1180,18 @@ namespace TeamApp
 
         private void btnDelete_Click(object? sender, EventArgs e)
         {
-            var targets = GetTargetRecordsForBatch();
+            var targets = GetTargetRecordsForBatch()
+                .Where(record => !record.Deleted)
+                .ToList();
             if (targets.Count == 0)
             {
-                MessageBox.Show("삭제 표시할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("삭제할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             var confirm = MessageBox.Show(
-                $"선택한 {targets.Count}개 프레임을 삭제 표시할까요?\n실제 이미지와 catalog 파일은 지우지 않고 목록에서 빨간색으로 표시합니다.",
-                "삭제 표시 확인",
+                $"선택한 {targets.Count}개 프레임의 이미지 파일을 _deleted_backup 폴더로 이동할까요?\n프레임 목록에서는 빨간색으로 남겨두며, 이미지 복구 버튼으로 되돌릴 수 있습니다.",
+                "이미지 삭제 확인",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
             if (confirm != DialogResult.Yes)
@@ -1117,15 +1199,27 @@ namespace TeamApp
                 return;
             }
 
+            var success = 0;
             foreach (var record in targets)
             {
-                record.Deleted = true;
+                try
+                {
+                    if (MoveImageToDeletedBackup(record))
+                    {
+                        success++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"이미지 삭제 실패: {record.ImageFile} / {ex.Message}");
+                }
             }
 
             SaveUiMarks();
             RecalculateAnomaliesIfNeeded();
             ApplyFilters(targets[0].GlobalOrder);
-            AppendLog($"삭제 표시: {targets.Count}개 프레임");
+            lstFrames.Invalidate();
+            AppendLog($"이미지 삭제: {success}/{targets.Count}개를 _deleted_backup으로 이동");
         }
 
         private void btnUndo_Click(object? sender, EventArgs e)
@@ -1136,19 +1230,97 @@ namespace TeamApp
 
             if (targets.Count == 0)
             {
-                MessageBox.Show("복구할 삭제 표시 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("복구할 삭제 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
+            var success = 0;
             foreach (var record in targets)
             {
-                record.Deleted = false;
+                try
+                {
+                    if (RestoreImageFromDeletedBackup(record))
+                    {
+                        success++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"이미지 복구 실패: {record.ImageFile} / {ex.Message}");
+                }
             }
 
             SaveUiMarks();
             RecalculateAnomaliesIfNeeded();
             ApplyFilters(targets[0].GlobalOrder);
-            AppendLog($"삭제 표시 복구: {targets.Count}개 프레임");
+            lstFrames.Invalidate();
+            AppendLog($"이미지 복구: {success}/{targets.Count}개");
+        }
+
+        private bool MoveImageToDeletedBackup(FrameRecord record)
+        {
+            var sourcePath = ResolveOriginalImagePath(record);
+            if (string.IsNullOrWhiteSpace(sourcePath))
+            {
+                throw new InvalidOperationException("이미지 경로가 비어 있습니다.");
+            }
+
+            var backupPath = GetDeletedBackupPath(sourcePath);
+            if (!File.Exists(sourcePath))
+            {
+                if (File.Exists(backupPath))
+                {
+                    record.Deleted = true;
+                    record.DeletedBackupPath = backupPath;
+                    return false;
+                }
+
+                throw new FileNotFoundException("원본 이미지와 삭제 백업을 모두 찾을 수 없습니다.", sourcePath);
+            }
+
+            var backupDirectory = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrWhiteSpace(backupDirectory))
+            {
+                Directory.CreateDirectory(backupDirectory);
+            }
+
+            File.Move(sourcePath, backupPath, true);
+            record.Deleted = true;
+            record.DeletedBackupPath = backupPath;
+            return true;
+        }
+
+        private bool RestoreImageFromDeletedBackup(FrameRecord record)
+        {
+            var targetPath = ResolveOriginalImagePath(record);
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                throw new InvalidOperationException("복구 대상 이미지 경로가 비어 있습니다.");
+            }
+
+            var backupPath = ResolveDeletedBackupPath(record);
+            if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
+            {
+                if (File.Exists(targetPath))
+                {
+                    record.Deleted = false;
+                    record.DeletedBackupPath = string.Empty;
+                    return false;
+                }
+
+                throw new FileNotFoundException("삭제 백업 이미지를 찾을 수 없습니다.", backupPath);
+            }
+
+            var targetDirectory = Path.GetDirectoryName(targetPath);
+            if (!string.IsNullOrWhiteSpace(targetDirectory))
+            {
+                Directory.CreateDirectory(targetDirectory);
+            }
+
+            File.Move(backupPath, targetPath, true);
+            record.Deleted = false;
+            record.DeletedBackupPath = string.Empty;
+            return true;
         }
 
         private string GetUiMarksPath()
@@ -1179,11 +1351,28 @@ namespace TeamApp
 
                 var deleted = ReadStringSet(root["deleted"] as JsonArray);
                 var edited = ReadStringSet(root["edited"] as JsonArray);
+                var deletedBackups = root["deletedBackups"] as JsonObject;
                 foreach (var record in allFrames)
                 {
                     var key = GetFrameMarkKey(record);
                     record.Deleted = deleted.Contains(key);
                     record.Edited = edited.Contains(key);
+                    if (!record.Deleted)
+                    {
+                        var imagePath = ResolveImagePath(record);
+                        if (!File.Exists(imagePath) && File.Exists(GetDeletedBackupPath(imagePath)))
+                        {
+                            record.Deleted = true;
+                        }
+                    }
+                    record.DeletedBackupPath = deletedBackups != null && deletedBackups.TryGetPropertyValue(key, out var backupNode)
+                        ? backupNode?.GetValue<string>() ?? string.Empty
+                        : string.Empty;
+
+                    if (record.Deleted && string.IsNullOrWhiteSpace(record.DeletedBackupPath))
+                    {
+                        record.DeletedBackupPath = ResolveDeletedBackupPath(record);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1221,9 +1410,16 @@ namespace TeamApp
             }
 
             var deleted = new JsonArray();
+            var deletedBackups = new JsonObject();
             foreach (var record in allFrames.Where(record => record.Deleted).OrderBy(record => record.GlobalOrder))
             {
-                deleted.Add(GetFrameMarkKey(record));
+                var key = GetFrameMarkKey(record);
+                deleted.Add(key);
+                var backupPath = ResolveDeletedBackupPath(record);
+                if (!string.IsNullOrWhiteSpace(backupPath))
+                {
+                    deletedBackups[key] = MakeUiMarkPathValue(backupPath);
+                }
             }
 
             var edited = new JsonArray();
@@ -1235,6 +1431,7 @@ namespace TeamApp
             var root = new JsonObject
             {
                 ["deleted"] = deleted,
+                ["deletedBackups"] = deletedBackups,
                 ["edited"] = edited,
                 ["updatedAt"] = DateTime.Now.ToString("O", CultureInfo.InvariantCulture)
             };
@@ -1363,9 +1560,11 @@ namespace TeamApp
             var avgThrottle = throttles.Count > 0 ? throttles.Average().ToString("0.###", CultureInfo.InvariantCulture) : "-";
             var anomalyCount = active.Count(record => record.IsAnomaly);
 
-            lblStats.Text = $"전체 {active.Count}개 / 표시 {visibleFrames.Count}개\n" +
-                            $"평균 angle {avgAngle}\n" +
-                            $"평균 throttle {avgThrottle}\n" +
+            var deletedCount = allFrames.Count(record => record.Deleted);
+            var editedCount = allFrames.Count(record => record.Edited);
+            lblStats.Text = $"사용 {active.Count}개 / 표시 {visibleFrames.Count}개\n" +
+                            $"삭제 {deletedCount}개 / 편집 {editedCount}개\n" +
+                            $"평균 angle {avgAngle} / throttle {avgThrottle}\n" +
                             $"이상 주행 {anomalyCount}개";
         }
 
@@ -2344,6 +2543,78 @@ namespace TeamApp
             return Path.Combine(backupRoot, relative);
         }
 
+        private string GetDeletedBackupPath(string imagePath)
+        {
+            var backupRoot = string.IsNullOrWhiteSpace(dataFolder)
+                ? Path.Combine(Path.GetDirectoryName(imagePath) ?? string.Empty, "_deleted_backup")
+                : Path.Combine(dataFolder, "_deleted_backup");
+
+            string relative;
+            try
+            {
+                relative = !string.IsNullOrWhiteSpace(dataFolder)
+                    ? Path.GetRelativePath(dataFolder, imagePath)
+                    : Path.GetFileName(imagePath);
+            }
+            catch
+            {
+                relative = Path.GetFileName(imagePath);
+            }
+
+            if (relative.StartsWith("..", StringComparison.Ordinal))
+            {
+                relative = Path.GetFileName(imagePath);
+            }
+
+            return Path.Combine(backupRoot, relative);
+        }
+
+
+        private string ResolveDeletedBackupPath(FrameRecord record)
+        {
+            if (!string.IsNullOrWhiteSpace(record.DeletedBackupPath))
+            {
+                var saved = record.DeletedBackupPath.Trim();
+                if (Path.IsPathRooted(saved))
+                {
+                    return saved;
+                }
+
+                return Path.Combine(dataFolder, saved);
+            }
+
+            var originalPath = ResolveOriginalImagePath(record);
+            if (string.IsNullOrWhiteSpace(originalPath))
+            {
+                return string.Empty;
+            }
+
+            return GetDeletedBackupPath(originalPath);
+        }
+
+        private string MakeUiMarkPathValue(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(dataFolder))
+            {
+                return path;
+            }
+
+            try
+            {
+                var relative = Path.GetRelativePath(dataFolder, path);
+                if (!relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative))
+                {
+                    return relative;
+                }
+            }
+            catch
+            {
+                // 상대 경로 변환 실패 시 절대 경로를 저장한다.
+            }
+
+            return path;
+        }
+
         private static void ReplaceFileAtomically(string sourcePath, string destinationPath)
         {
             var directory = Path.GetDirectoryName(destinationPath);
@@ -2448,14 +2719,14 @@ namespace TeamApp
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MinimizeBox = false,
                 MaximizeBox = false,
-                ClientSize = new Size(880, 610)
+                ClientSize = new Size(880, 650)
             };
 
             var lblInfo = new Label
             {
                 Location = new Point(14, 12),
                 Size = new Size(850, 38),
-                Text = "학습 데이터 범위와 실행 환경을 선택하면 경로를 환경에 맞게 변환하고 donkey train 명령을 자동 생성합니다. 삭제 표시된 프레임은 학습 데이터셋에서 제외됩니다."
+                Text = "학습 데이터 범위와 실행 환경을 선택하면 경로를 환경에 맞게 변환하고 donkey train 명령을 자동 생성합니다. 삭제되어 _deleted_backup으로 이동된 프레임은 학습 데이터셋에서 제외됩니다."
             };
 
             var lblDatasetMode = new Label { Location = new Point(14, 62), Size = new Size(130, 22), Text = "학습 데이터 범위" };
@@ -2506,7 +2777,7 @@ namespace TeamApp
             var grpRemote = new GroupBox
             {
                 Location = new Point(14, 246),
-                Size = new Size(840, 112),
+                Size = new Size(840, 148),
                 Text = "WSL / VirtualBox 실행 옵션"
             };
             var lblActivate = new Label { Location = new Point(12, 26), Size = new Size(120, 22), Text = "환경 활성화" };
@@ -2517,21 +2788,24 @@ namespace TeamApp
             var txtSshHost = new TextBox { Location = new Point(250, 60), Size = new Size(120, 23), Text = "127.0.0.1" };
             var lblSshPort = new Label { Location = new Point(383, 62), Size = new Size(40, 22), Text = "port" };
             var txtSshPort = new TextBox { Location = new Point(425, 60), Size = new Size(70, 23), Text = "2222" };
+            var lblSshPassword = new Label { Location = new Point(510, 62), Size = new Size(95, 22), Text = "SSH 인증" };
+            var txtSshPassword = new TextBox { Location = new Point(605, 60), Size = new Size(1, 1), UseSystemPasswordChar = true, Text = string.Empty, Visible = false };
+            var chkUsePassword = new CheckBox { Location = new Point(605, 60), Size = new Size(210, 24), Text = "비밀번호 입력형", Checked = true };
             var lblRemoteWork = new Label { Location = new Point(510, 26), Size = new Size(95, 22), Text = "원격 mycar" };
             var txtRemoteWork = new TextBox { Location = new Point(605, 24), Size = new Size(220, 23), Text = ConvertWindowsSharedFolderPathToVirtualBoxPath(rootFolder) };
-            var lblRemoteHint = new Label { Location = new Point(510, 62), Size = new Size(320, 36), Text = "VirtualBox는 포트포워딩 SSH 기준입니다. mycar/data가 공유폴더라면 /media/sf_... 경로를 사용하세요." };
-            grpRemote.Controls.AddRange(new Control[] { lblActivate, txtActivate, lblSshUser, txtSshUser, lblSshHost, txtSshHost, lblSshPort, txtSshPort, lblRemoteWork, txtRemoteWork, lblRemoteHint });
+            var lblRemoteHint = new Label { Location = new Point(12, 96), Size = new Size(805, 40), Text = "비밀번호 입력형을 체크하면 학습 실행 시 Windows 콘솔이 열리고 SSH 비밀번호를 직접 입력합니다. 비밀번호는 UI/로그/명령 미리보기에 저장되거나 표시되지 않습니다." };
+            grpRemote.Controls.AddRange(new Control[] { lblActivate, txtActivate, lblSshUser, txtSshUser, lblSshHost, txtSshHost, lblSshPort, txtSshPort, lblSshPassword, txtSshPassword, chkUsePassword, lblRemoteWork, txtRemoteWork, lblRemoteHint });
 
-            var btnUseLoaded = new Button { Location = new Point(150, 372), Size = new Size(135, 30), Text = "현재 로드 경로" };
-            var btnConvertWsl = new Button { Location = new Point(294, 372), Size = new Size(135, 30), Text = "WSL 경로 변환" };
-            var btnConvertVBox = new Button { Location = new Point(438, 372), Size = new Size(160, 30), Text = "VirtualBox 경로 변환" };
-            var btnExportSet = new Button { Location = new Point(608, 372), Size = new Size(152, 30), Text = "학습 데이터 생성" };
-            var btnBuild = new Button { Location = new Point(770, 372), Size = new Size(84, 30), Text = "명령 생성" };
+            var btnUseLoaded = new Button { Location = new Point(150, 408), Size = new Size(135, 30), Text = "현재 로드 경로" };
+            var btnConvertWsl = new Button { Location = new Point(294, 408), Size = new Size(135, 30), Text = "WSL 경로 변환" };
+            var btnConvertVBox = new Button { Location = new Point(438, 408), Size = new Size(160, 30), Text = "VirtualBox 경로 변환" };
+            var btnExportSet = new Button { Location = new Point(608, 408), Size = new Size(152, 30), Text = "학습 데이터 생성" };
+            var btnBuild = new Button { Location = new Point(770, 408), Size = new Size(84, 30), Text = "명령 생성" };
 
-            var lblPreviewTitle = new Label { Location = new Point(14, 418), Size = new Size(130, 22), Text = "명령 미리보기" };
+            var lblPreviewTitle = new Label { Location = new Point(14, 454), Size = new Size(130, 22), Text = "명령 미리보기" };
             var txtPreview = new TextBox
             {
-                Location = new Point(150, 416),
+                Location = new Point(150, 452),
                 Size = new Size(704, 88),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
@@ -2540,13 +2814,13 @@ namespace TeamApp
 
             var lblGuide = new Label
             {
-                Location = new Point(150, 512),
+                Location = new Point(150, 548),
                 Size = new Size(704, 42),
                 Text = "Windows: C:\\... 경로 / WSL: /mnt/c/... 경로 / VirtualBox: ssh + /media/sf_... 경로로 생성됩니다. 생성된 _training_sets 폴더는 공유폴더 안에 만들어집니다."
             };
 
-            var btnOk = new Button { Location = new Point(638, 568), Size = new Size(100, 32), Text = "적용", DialogResult = DialogResult.OK };
-            var btnCancel = new Button { Location = new Point(748, 568), Size = new Size(100, 32), Text = "취소", DialogResult = DialogResult.Cancel };
+            var btnOk = new Button { Location = new Point(638, 608), Size = new Size(100, 32), Text = "적용", DialogResult = DialogResult.OK };
+            var btnCancel = new Button { Location = new Point(748, 608), Size = new Size(100, 32), Text = "취소", DialogResult = DialogResult.Cancel };
 
             List<FrameRecord> SelectTrainingRecords()
             {
@@ -2592,7 +2866,8 @@ namespace TeamApp
                     txtSshUser.Text.Trim(),
                     txtSshHost.Text.Trim(),
                     txtSshPort.Text.Trim(),
-                    txtRemoteWork.Text.Trim());
+                    txtRemoteWork.Text.Trim(),
+                    chkUsePassword.Checked ? SshPasswordPlaceholder : string.Empty);
             }
 
             void ExportAndSetPath(bool showMessage)
@@ -2707,6 +2982,15 @@ namespace TeamApp
             txtSshUser.TextChanged += (_, _) => RefreshPreview();
             txtSshHost.TextChanged += (_, _) => RefreshPreview();
             txtSshPort.TextChanged += (_, _) => RefreshPreview();
+            txtSshPassword.TextChanged += (_, _) =>
+            {
+                if (!string.IsNullOrWhiteSpace(txtSshPassword.Text) && !chkUsePassword.Checked)
+                {
+                    chkUsePassword.Checked = true;
+                }
+                RefreshPreview();
+            };
+            chkUsePassword.CheckedChanged += (_, _) => RefreshPreview();
             txtRemoteWork.TextChanged += (_, _) => RefreshPreview();
 
             dlg.Controls.AddRange(new Control[]
@@ -2725,14 +3009,23 @@ namespace TeamApp
             {
                 trainingDataPathOverride = txtData.Text.Trim();
                 trainingModelPathOverride = txtModel.Text.Trim();
+                trainingUseSshPasswordInput = chkUsePassword.Checked;
+                trainingSshPassword = string.Empty;
                 txtTrainCommand.Text = txtPreview.Text.Trim();
+                trainingCommandGenerated = true;
+                chkManualCommandEdit.Checked = false;
+                UpdateTrainingCommandEditState();
                 AppendLog("학습 명령 자동 생성 완료");
                 AppendLog("학습 data 경로 설정: " + trainingDataPathOverride);
                 AppendLog("모델 저장 경로 설정: " + trainingModelPathOverride);
+                if (trainingUseSshPasswordInput)
+                {
+                    AppendLog("VirtualBox SSH 인증 설정: 비밀번호 입력형 사용(실행 시 콘솔에서 직접 입력, UI/로그 비표시)");
+                }
             }
         }
 
-        private string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir)
+        private string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir, string sshPassword)
         {
             var extra = string.IsNullOrWhiteSpace(extraArgs) ? string.Empty : " " + extraArgs.Trim();
             if (environment == "wsl")
@@ -2751,7 +3044,14 @@ namespace TeamApp
                 var body = BuildBashTrainBody(activateCommand, work, vboxData, vboxModel, extraArgs);
                 var userHost = string.IsNullOrWhiteSpace(sshUser) ? sshHost : sshUser + "@" + sshHost;
                 var portPart = string.IsNullOrWhiteSpace(sshPort) ? string.Empty : "-p " + sshPort.Trim() + " ";
-                return "ssh " + portPart + userHost + " \"" + body.Replace("\"", "\\\"") + "\"";
+                if (!string.IsNullOrWhiteSpace(sshPassword))
+                {
+                    var sshPasswordOptions = "-T -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ConnectionAttempts=1 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=2 ";
+                    return "ssh " + sshPasswordOptions + portPart + userHost + " \"" + body.Replace("\"", "\\\"") + "\"";
+                }
+
+                var sshOptions = "-T -o BatchMode=yes -o NumberOfPasswordPrompts=0 -o ConnectionAttempts=1 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=2 ";
+                return "ssh " + sshOptions + portPart + userHost + " \"" + body.Replace("\"", "\\\"") + "\"";
             }
 
             return "donkey train --tub \"" + dataPath + "\" --model \"" + modelPath + "\"" + extra;
@@ -2902,6 +3202,61 @@ namespace TeamApp
             return value.Replace('\\', '/');
         }
 
+        private void ResetTrainingCommandState()
+        {
+            trainingUseSshPasswordInput = false;
+            trainingSshPassword = string.Empty;
+            trainingCommandGenerated = false;
+            if (!chkManualCommandEdit.Checked)
+            {
+                txtTrainCommand.Text = TrainingCommandPlaceholder;
+            }
+            UpdateTrainingCommandEditState();
+        }
+
+        private void chkManualCommandEdit_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateTrainingCommandEditState();
+        }
+
+        private void UpdateTrainingCommandEditState()
+        {
+            txtTrainCommand.ReadOnly = !chkManualCommandEdit.Checked;
+            txtTrainCommand.BackColor = chkManualCommandEdit.Checked ? Color.White : SystemColors.Control;
+            if (chkManualCommandEdit.Checked)
+            {
+                if (!trainingCommandGenerated && IsTrainingCommandPlaceholder(txtTrainCommand.Text.Trim()))
+                {
+                    txtTrainCommand.Text = "donkey train --tub \"{DATA_FOLDER}\" --model \"{MODEL_PATH}\"";
+                }
+                lblHint.Text = "수동 편집 모드입니다. 직접 입력한 명령을 실행합니다.";
+            }
+            else
+            {
+                if (!trainingCommandGenerated)
+                {
+                    txtTrainCommand.Text = TrainingCommandPlaceholder;
+                }
+                lblHint.Text = "먼저 학습 명령 생성으로 환경/경로를 설정하세요. 수동 편집 체크 시에만 명령 수정 가능.";
+            }
+        }
+
+        private static bool IsTrainingCommandPlaceholder(string command)
+        {
+            return string.IsNullOrWhiteSpace(command) ||
+                   string.Equals(command, TrainingCommandPlaceholder, StringComparison.Ordinal) ||
+                   command.StartsWith("먼저 [학습 명령 생성]", StringComparison.Ordinal);
+        }
+
+        private static bool IsSshCommand(string command)
+        {
+            var trimmed = command.TrimStart();
+            return trimmed.Equals("ssh", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("ssh.exe ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("\"ssh.exe\" ", StringComparison.OrdinalIgnoreCase);
+        }
+
         private async void btnTrain_Click(object? sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(dataFolder) || !Directory.Exists(dataFolder))
@@ -2911,9 +3266,16 @@ namespace TeamApp
             }
 
             var command = txtTrainCommand.Text.Trim();
-            if (string.IsNullOrWhiteSpace(command))
+            if (!trainingCommandGenerated && !chkManualCommandEdit.Checked)
             {
-                MessageBox.Show("실행할 학습 명령을 입력하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("먼저 [학습 명령 생성]을 눌러 학습 범위와 실행 환경을 선택하세요. 직접 입력하려면 [수동 편집]을 체크하세요.", "학습 명령 필요", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                btnTrainingPaths.PerformClick();
+                return;
+            }
+
+            if (IsTrainingCommandPlaceholder(command))
+            {
+                MessageBox.Show("실행할 학습 명령이 아직 생성되지 않았습니다. [학습 명령 생성]을 누르거나 [수동 편집]을 체크한 뒤 명령을 직접 입력하세요.", "학습 명령 필요", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -2936,8 +3298,24 @@ namespace TeamApp
             {
                 EnsureLocalModelDirectory(trainingModelPath);
                 var preparedCommand = PrepareTrainingCommand(command);
-                AppendLog("> " + preparedCommand);
-                var exitCode = await RunCommandAsync(preparedCommand);
+                var shouldUseInteractiveSshPassword = StartsWithSshCommand(preparedCommand) &&
+                    (trainingUseSshPasswordInput || ContainsSshPasswordBlockingOptions(preparedCommand));
+                if (shouldUseInteractiveSshPassword)
+                {
+                    preparedCommand = EnableOpenSshPasswordPrompt(preparedCommand);
+                    AppendLog("> " + MaskSensitiveCommand(preparedCommand));
+                    AppendLog("SSH 비밀번호 입력형 실행: 열린 콘솔 창에서 VM 비밀번호를 입력하세요. 입력값은 WinForms에 저장되지 않습니다.");
+                    var interactiveExitCode = await RunInteractiveConsoleCommandAsync(preparedCommand);
+                    AppendLog($"프로세스 종료 코드: {interactiveExitCode}");
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(trainingSshPassword))
+                {
+                    preparedCommand = EnableOpenSshPasswordPrompt(preparedCommand);
+                }
+                AppendLog("> " + MaskSensitiveCommand(preparedCommand));
+                var exitCode = await RunCommandAsync(preparedCommand, string.IsNullOrWhiteSpace(trainingSshPassword) ? null : trainingSshPassword);
                 AppendLog($"프로세스 종료 코드: {exitCode}");
             }
             catch (Exception ex)
@@ -2949,6 +3327,147 @@ namespace TeamApp
             {
                 btnTrain.Enabled = true;
             }
+        }
+
+        private static string EnableOpenSshPasswordPrompt(string command)
+        {
+            var trimmed = command.TrimStart();
+            if (!trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase))
+            {
+                return command;
+            }
+
+            // SSH_ASKPASS cannot work when BatchMode disables every password prompt.
+            // Older generated commands may still contain those options, so strip them just before execution.
+            var normalized = Regex.Replace(command, @"(?i)\s+-o\s+BatchMode\s*=\s*yes", string.Empty);
+            normalized = Regex.Replace(normalized, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*=\s*0", string.Empty);
+
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o NumberOfPasswordPrompts=1 ", RegexOptions.CultureInvariant);
+            }
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+PreferredAuthentications\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o PreferredAuthentications=password ", RegexOptions.CultureInvariant);
+            }
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+PubkeyAuthentication\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o PubkeyAuthentication=no ", RegexOptions.CultureInvariant);
+            }
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+KbdInteractiveAuthentication\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o KbdInteractiveAuthentication=no ", RegexOptions.CultureInvariant);
+            }
+
+            return normalized;
+        }
+
+        private static bool StartsWithSshCommand(string command)
+        {
+            var trimmed = command.TrimStart();
+            return trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("ssh.exe ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("ssh", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("ssh.exe", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsSshPasswordBlockingOptions(string command)
+        {
+            return Regex.IsMatch(command, @"(?i)\s+-o\s+BatchMode\s*=\s*yes") ||
+                   Regex.IsMatch(command, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*=\s*0");
+        }
+
+        private Task<int> RunInteractiveConsoleCommandAsync(string command)
+        {
+            var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
+            var shell = Environment.GetEnvironmentVariable("ComSpec");
+            if (string.IsNullOrWhiteSpace(shell))
+            {
+                shell = "cmd.exe";
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = shell,
+                Arguments = "/D /S /K " + command,
+                WorkingDirectory = workingDirectory,
+
+                // ExitCode 읽으려면 false
+                UseShellExecute = false,
+
+                // 콘솔창 보이게
+                CreateNoWindow = false,
+
+                // 비밀번호 직접 입력해야 하므로 리다이렉트 금지
+                RedirectStandardInput = false,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
+            };
+
+            return RunExternalProcessAsync(startInfo);
+        }
+
+        private static Task<int> RunExternalProcessAsync(ProcessStartInfo startInfo)
+        {
+            var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            try
+            {
+                var process = new Process
+                {
+                    StartInfo = startInfo,
+                    EnableRaisingEvents = true
+                };
+
+                process.Exited += (_, _) =>
+                {
+                    try
+                    {
+                        completion.TrySetResult(process.ExitCode);
+                    }
+                    catch (Exception ex)
+                    {
+                        completion.TrySetException(ex);
+                    }
+                    finally
+                    {
+                        process.Dispose();
+                    }
+                };
+
+                if (!process.Start())
+                {
+                    process.Dispose();
+                    completion.TrySetException(new InvalidOperationException("프로세스를 시작하지 못했습니다."));
+                }
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+
+            return completion.Task;
+        }
+
+        private string ResolveCommandSecrets(string command)
+        {
+            if (command.Contains(SshPasswordPlaceholder, StringComparison.Ordinal))
+            {
+                if (string.IsNullOrWhiteSpace(trainingSshPassword))
+                {
+                    throw new InvalidOperationException("SSH 비밀번호 자동입력이 켜져 있지만 비밀번호가 비어 있습니다. 학습 명령 생성을 다시 열어 비밀번호를 입력하거나 SSH 키 로그인을 사용하세요.");
+                }
+
+                return command.Replace(SshPasswordPlaceholder, trainingSshPassword);
+            }
+
+            return command;
+        }
+
+        private static string MaskSensitiveCommand(string command)
+        {
+            var masked = command.Replace(SshPasswordPlaceholder, "********");
+            return Regex.Replace(masked, "(?i)(-pw\\s+)(\"[^\"]*\"|\\S+)", "$1********");
         }
 
         private string PrepareTrainingCommand(string command)
@@ -3317,21 +3836,67 @@ namespace TeamApp
 
         private static bool RequiresShell(string command)
         {
-            return command.Contains("&&", StringComparison.Ordinal) ||
-                   command.Contains("||", StringComparison.Ordinal) ||
-                   command.Contains("|", StringComparison.Ordinal) ||
-                   command.Contains(">", StringComparison.Ordinal) ||
-                   command.Contains("<", StringComparison.Ordinal) ||
-                   command.TrimStart().StartsWith("call ", StringComparison.OrdinalIgnoreCase) ||
-                   command.TrimStart().StartsWith("set ", StringComparison.OrdinalIgnoreCase);
+            var trimmed = command.TrimStart();
+            return ContainsShellOperatorOutsideQuotes(command) ||
+                   trimmed.StartsWith("call ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("set ", StringComparison.OrdinalIgnoreCase);
         }
 
-        private Task<int> RunCommandAsync(string command)
+        private static bool ContainsShellOperatorOutsideQuotes(string command)
+        {
+            var inDoubleQuote = false;
+            var inSingleQuote = false;
+            for (var i = 0; i < command.Length; i++)
+            {
+                var ch = command[i];
+                if (ch == '"' && !inSingleQuote)
+                {
+                    inDoubleQuote = !inDoubleQuote;
+                    continue;
+                }
+
+                if (ch == '\'' && !inDoubleQuote)
+                {
+                    inSingleQuote = !inSingleQuote;
+                    continue;
+                }
+
+                if (inDoubleQuote || inSingleQuote)
+                {
+                    continue;
+                }
+
+                if (ch == '>' || ch == '<')
+                {
+                    return true;
+                }
+
+                if ((ch == '&' || ch == '|' ) && i + 1 < command.Length && command[i + 1] == ch)
+                {
+                    return true;
+                }
+
+                if (ch == '|')
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private Task<int> RunCommandAsync(string command, string? sshPassword = null)
         {
             var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
             if (!RequiresShell(command) && TryCreateDirectProcessStartInfo(command, workingDirectory, out var directStartInfo))
             {
-                return RunProcessAsync(directStartInfo);
+                ApplySshAskPassIfNeeded(directStartInfo, sshPassword);
+                var isPasswordSsh = !string.IsNullOrWhiteSpace(sshPassword) && IsSshCommand(command);
+                if (isPasswordSsh)
+                {
+                    directStartInfo.RedirectStandardInput = true;
+                }
+                return RunProcessAsync(directStartInfo, isPasswordSsh ? sshPassword : null, isPasswordSsh);
             }
 
             var shell = Environment.GetEnvironmentVariable("ComSpec");
@@ -3350,8 +3915,42 @@ namespace TeamApp
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            ApplySshAskPassIfNeeded(shellStartInfo, sshPassword);
+            var shellPasswordSsh = !string.IsNullOrWhiteSpace(sshPassword) && IsSshCommand(command);
+            if (shellPasswordSsh)
+            {
+                shellStartInfo.RedirectStandardInput = true;
+            }
 
-            return RunProcessAsync(shellStartInfo);
+            return RunProcessAsync(shellStartInfo, shellPasswordSsh ? sshPassword : null, shellPasswordSsh);
+        }
+
+        private void ApplySshAskPassIfNeeded(ProcessStartInfo startInfo, string? sshPassword)
+        {
+            if (string.IsNullOrWhiteSpace(sshPassword))
+            {
+                return;
+            }
+
+            var askPassDir = Path.Combine(Path.GetTempPath(), "TeamAppSshAskPass");
+            Directory.CreateDirectory(askPassDir);
+            var scriptFile = Path.Combine(askPassDir, "askpass.ps1");
+            var cmdFile = Path.Combine(askPassDir, "askpass.cmd");
+
+            File.WriteAllText(scriptFile,
+                "$p = [Environment]::GetEnvironmentVariable('TEAMAPP_SSH_PASSWORD')\r\n" +
+                "[Console]::Out.Write($p)",
+                new UTF8Encoding(false));
+            File.WriteAllText(cmdFile,
+                "@echo off\r\n" +
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" + scriptFile + "\"\r\n",
+                new UTF8Encoding(false));
+
+            startInfo.Environment["TEAMAPP_SSH_PASSWORD"] = sshPassword;
+            startInfo.Environment["SSH_ASKPASS"] = cmdFile;
+            startInfo.Environment["SSH_ASKPASS_REQUIRE"] = "force";
+            startInfo.Environment["DISPLAY"] = "teamapp:0";
+            startInfo.Environment["MSYS2_ARG_CONV_EXCL"] = "*";
         }
 
         private static bool TryCreateDirectProcessStartInfo(string command, string workingDirectory, out ProcessStartInfo startInfo)
@@ -3425,7 +4024,7 @@ namespace TeamApp
             return tokens;
         }
 
-        private async Task<int> RunProcessAsync(ProcessStartInfo startInfo)
+        private async Task<int> RunProcessAsync(ProcessStartInfo startInfo, string? stdinPassword = null, bool enableSshAuthTimeout = false)
         {
             using var process = new Process
             {
@@ -3445,19 +4044,77 @@ namespace TeamApp
                 throw;
             }
 
-            var outputTask = Task.Run(() => ReadProcessStream(process.StandardOutput, false));
-            var errorTask = Task.Run(() => ReadProcessStream(process.StandardError, true));
+            var lastOutputUtc = DateTime.UtcNow;
+            var outputTask = Task.Run(() => ReadProcessStream(process.StandardOutput, false, () => lastOutputUtc = DateTime.UtcNow));
+            var errorTask = Task.Run(() => ReadProcessStream(process.StandardError, true, () => lastOutputUtc = DateTime.UtcNow));
 
-            await Task.Run(() => process.WaitForExit()).ConfigureAwait(false);
+            Task? passwordFallbackTask = null;
+            if (!string.IsNullOrWhiteSpace(stdinPassword) && startInfo.RedirectStandardInput)
+            {
+                passwordFallbackTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(900).ConfigureAwait(false);
+                        if (!process.HasExited)
+                        {
+                            process.StandardInput.WriteLine(stdinPassword);
+                            process.StandardInput.Flush();
+                        }
+                    }
+                    catch
+                    {
+                        // OpenSSH가 stdin 비밀번호 입력을 지원하지 않는 경우가 있어도 AskPass가 우선 처리하므로 무시한다.
+                    }
+                });
+            }
+
+            var exitTask = Task.Run(() => process.WaitForExit());
+            if (enableSshAuthTimeout)
+            {
+                while (!exitTask.IsCompleted)
+                {
+                    var completed = await Task.WhenAny(exitTask, Task.Delay(5000)).ConfigureAwait(false);
+                    if (completed == exitTask)
+                    {
+                        break;
+                    }
+
+                    var idleSeconds = (DateTime.UtcNow - lastOutputUtc).TotalSeconds;
+                    if (idleSeconds >= 60)
+                    {
+                        try
+                        {
+                            process.Kill(true);
+                        }
+                        catch
+                        {
+                            // 이미 종료된 경우 무시한다.
+                        }
+
+                        throw new InvalidOperationException("SSH 비밀번호 입력 대기 또는 인증 지연으로 보이는 상태가 60초 이상 지속되어 실행을 중단했습니다. 학습 명령 생성 창에서 SSH 비밀번호와 자동입력을 확인하거나 PowerShell에서 ssh 접속이 되는지 먼저 확인하세요.");
+                    }
+                }
+            }
+            else
+            {
+                await exitTask.ConfigureAwait(false);
+            }
+
+            if (passwordFallbackTask != null)
+            {
+                await Task.WhenAny(passwordFallbackTask, Task.Delay(1000)).ConfigureAwait(false);
+            }
             await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false);
             return process.ExitCode;
         }
 
-        private void ReadProcessStream(StreamReader reader, bool isError)
+        private void ReadProcessStream(StreamReader reader, bool isError, Action? markActivity = null)
         {
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
+                markActivity?.Invoke();
                 if (string.IsNullOrWhiteSpace(line))
                 {
                     continue;
@@ -3599,6 +4256,7 @@ namespace TeamApp
             public double? Throttle { get; set; }
             public string Mode { get; set; } = string.Empty;
             public bool Deleted { get; set; }
+            public string DeletedBackupPath { get; set; } = string.Empty;
             public bool Edited { get; set; }
             public bool IsAnomaly { get; set; }
             public double? MovingAverage { get; set; }
@@ -3606,4 +4264,128 @@ namespace TeamApp
             public double AnomalyScore { get; set; }
         }
     }
+
+    internal readonly struct FrameListVisualState
+    {
+        public static readonly FrameListVisualState Normal = new FrameListVisualState(false, false, false);
+
+        public FrameListVisualState(bool deleted, bool edited, bool anomaly)
+        {
+            Deleted = deleted;
+            Edited = edited;
+            Anomaly = anomaly;
+        }
+
+        public bool Deleted { get; }
+        public bool Edited { get; }
+        public bool Anomaly { get; }
+    }
+
+    internal sealed class ColoredCheckedListBox : CheckedListBox
+    {
+        public ColoredCheckedListBox()
+        {
+            DrawMode = DrawMode.OwnerDrawFixed;
+            CheckOnClick = false;
+        }
+
+        public Func<int, FrameListVisualState>? ResolveVisualState { get; set; }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            var index = IndexFromPoint(e.Location);
+            if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
+            {
+                SelectedIndex = index;
+                SetItemChecked(index, !GetItemChecked(index));
+                Invalidate(GetItemRectangle(index));
+                return;
+            }
+
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseDoubleClick(MouseEventArgs e)
+        {
+            var index = IndexFromPoint(e.Location);
+            if (index >= 0 && index < Items.Count && !IsPointInsideCheckBox(index, e.Location))
+            {
+                SelectedIndex = index;
+                return;
+            }
+
+            base.OnMouseDoubleClick(e);
+        }
+
+        private bool IsPointInsideCheckBox(int index, Point point)
+        {
+            if (index < 0 || index >= Items.Count)
+            {
+                return false;
+            }
+
+            var itemBounds = GetItemRectangle(index);
+            using var graphics = CreateGraphics();
+            var glyphSize = CheckBoxRenderer.GetGlyphSize(graphics, CheckBoxState.UncheckedNormal);
+            var glyphBounds = new Rectangle(
+                itemBounds.Left + 3,
+                itemBounds.Top + Math.Max(0, (itemBounds.Height - glyphSize.Height) / 2),
+                glyphSize.Width + 6,
+                glyphSize.Height);
+            return glyphBounds.Contains(point);
+        }
+
+        protected override void OnDrawItem(DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= Items.Count)
+            {
+                return;
+            }
+
+            var state = ResolveVisualState?.Invoke(e.Index) ?? FrameListVisualState.Normal;
+            var selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            var backColor = selected ? SystemColors.Highlight : BackColor;
+            var foreColor = selected ? SystemColors.HighlightText : ForeColor;
+
+            if (state.Deleted)
+            {
+                backColor = selected ? Color.Firebrick : Color.LightCoral;
+                foreColor = selected ? Color.White : Color.DarkRed;
+            }
+            else if (state.Edited)
+            {
+                backColor = selected ? Color.SeaGreen : Color.LightGreen;
+                foreColor = selected ? Color.White : Color.DarkGreen;
+            }
+            else if (state.Anomaly && !selected)
+            {
+                foreColor = Color.Red;
+            }
+
+            using (var background = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(background, e.Bounds);
+            }
+
+            var isChecked = GetItemChecked(e.Index);
+            var checkBoxState = isChecked ? CheckBoxState.CheckedNormal : CheckBoxState.UncheckedNormal;
+            var glyphSize = CheckBoxRenderer.GetGlyphSize(e.Graphics, checkBoxState);
+            var glyphLocation = new Point(e.Bounds.Left + 3, e.Bounds.Top + Math.Max(0, (e.Bounds.Height - glyphSize.Height) / 2));
+            CheckBoxRenderer.DrawCheckBox(e.Graphics, glyphLocation, checkBoxState);
+
+            var text = Items[e.Index]?.ToString() ?? string.Empty;
+            var textRect = new Rectangle(e.Bounds.Left + glyphSize.Width + 10, e.Bounds.Top, Math.Max(10, e.Bounds.Width - glyphSize.Width - 14), e.Bounds.Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                text,
+                e.Font ?? Font,
+                textRect,
+                foreColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+            e.DrawFocusRectangle();
+        }
+    }
+
+
 }
