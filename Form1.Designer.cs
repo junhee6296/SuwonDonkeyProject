@@ -35,7 +35,9 @@ namespace TeamApp
             txtSelectedFolder = new TextBox();
             btnOpenDataFolder = new Button();
             grpList = new GroupBox();
-            lstFrames = new ListBox();
+            btnCheckAllFrames = new Button();
+            btnClearCheckedFrames = new Button();
+            lstFrames = new ColoredCheckedListBox();
             lblStats = new Label();
             grpPreview = new GroupBox();
             picFrame = new PictureBox();
@@ -46,13 +48,16 @@ namespace TeamApp
             btnReplaceRegion = new Button();
             btnClearSelection = new Button();
             btnRestoreImage = new Button();
+            grpDeleteOps = new GroupBox();
+            btnDelete = new Button();
+            btnUndo = new Button();
             pnlTimeline = new Panel();
             trbFrame = new TrackBar();
             btnPrev = new Button();
             btnPlay = new Button();
+            lblPlaySpeed = new Label();
+            trbPlaySpeed = new TrackBar();
             btnNext = new Button();
-            btnUndo = new Button();
-            btnDelete = new Button();
             btnSave = new Button();
             lblCurrentIndex = new Label();
             lblCurrentImage = new Label();
@@ -69,6 +74,8 @@ namespace TeamApp
             chkAngleRange = new CheckBox();
             chkThrottleRange = new CheckBox();
             chkAnomalyOnly = new CheckBox();
+            chkDeletedOnly = new CheckBox();
+            chkEditedOnly = new CheckBox();
             lblRangeMin = new Label();
             lblRangeMax = new Label();
             numAngleMin = new NumericUpDown();
@@ -89,17 +96,21 @@ namespace TeamApp
             lblAnomalyHint = new Label();
             grpTrain = new GroupBox();
             lblCommand = new Label();
+            chkManualCommandEdit = new CheckBox();
             txtTrainCommand = new TextBox();
+            btnTrainingPaths = new Button();
             btnTrain = new Button();
-            btnCheckDonkey = new Button();
             lblHint = new Label();
+            btnCheckDonkey = new Button();
             grpLog = new GroupBox();
             txtLog = new TextBox();
             grpList.SuspendLayout();
             grpPreview.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
             grpImageEdit.SuspendLayout();
+            grpDeleteOps.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)trbFrame).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)trbPlaySpeed).BeginInit();
             ((System.ComponentModel.ISupportInitialize)picGraph).BeginInit();
             grpFilter.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numAngleMin).BeginInit();
@@ -136,14 +147,16 @@ namespace TeamApp
             // 
             btnOpenDataFolder.Location = new Point(894, 12);
             btnOpenDataFolder.Name = "btnOpenDataFolder";
-            btnOpenDataFolder.Size = new Size(128, 30);
+            btnOpenDataFolder.Size = new Size(210, 30);
             btnOpenDataFolder.TabIndex = 2;
-            btnOpenDataFolder.Text = "데이터 폴더 열기";
+            btnOpenDataFolder.Text = "선택한 폴더 경로 확인하기";
             btnOpenDataFolder.UseVisualStyleBackColor = true;
             btnOpenDataFolder.Click += btnOpenDataFolder_Click;
             // 
             // grpList
             // 
+            grpList.Controls.Add(btnCheckAllFrames);
+            grpList.Controls.Add(btnClearCheckedFrames);
             grpList.Controls.Add(lstFrames);
             grpList.Controls.Add(lblStats);
             grpList.Location = new Point(12, 52);
@@ -153,19 +166,38 @@ namespace TeamApp
             grpList.TabStop = false;
             grpList.Text = "프레임 목록";
             // 
+            // btnCheckAllFrames
+            // 
+            btnCheckAllFrames.Location = new Point(10, 24);
+            btnCheckAllFrames.Name = "btnCheckAllFrames";
+            btnCheckAllFrames.Size = new Size(120, 28);
+            btnCheckAllFrames.TabIndex = 1;
+            btnCheckAllFrames.Text = "전체 선택";
+            btnCheckAllFrames.UseVisualStyleBackColor = true;
+            btnCheckAllFrames.Click += btnCheckAllFrames_Click;
+            // 
+            // btnClearCheckedFrames
+            // 
+            btnClearCheckedFrames.Location = new Point(140, 24);
+            btnClearCheckedFrames.Name = "btnClearCheckedFrames";
+            btnClearCheckedFrames.Size = new Size(120, 28);
+            btnClearCheckedFrames.TabIndex = 2;
+            btnClearCheckedFrames.Text = "전체 해제";
+            btnClearCheckedFrames.UseVisualStyleBackColor = true;
+            btnClearCheckedFrames.Click += btnClearCheckedFrames_Click;
+            // 
             // lstFrames
             // 
-            lstFrames.DrawMode = DrawMode.OwnerDrawFixed;
+            lstFrames.CheckOnClick = true;
             lstFrames.FormattingEnabled = true;
             lstFrames.HorizontalScrollbar = true;
             lstFrames.IntegralHeight = false;
-            lstFrames.ItemHeight = 18;
-            lstFrames.Location = new Point(10, 22);
+            lstFrames.Location = new Point(10, 58);
             lstFrames.Name = "lstFrames";
+            lstFrames.ResolveVisualState = null;
             lstFrames.ScrollAlwaysVisible = true;
-            lstFrames.Size = new Size(250, 650);
+            lstFrames.Size = new Size(250, 615);
             lstFrames.TabIndex = 0;
-            lstFrames.DrawItem += lstFrames_DrawItem;
             lstFrames.SelectedIndexChanged += lstFrames_SelectedIndexChanged;
             // 
             // lblStats
@@ -180,13 +212,14 @@ namespace TeamApp
             // 
             grpPreview.Controls.Add(picFrame);
             grpPreview.Controls.Add(grpImageEdit);
+            grpPreview.Controls.Add(grpDeleteOps);
             grpPreview.Controls.Add(pnlTimeline);
             grpPreview.Controls.Add(trbFrame);
             grpPreview.Controls.Add(btnPrev);
             grpPreview.Controls.Add(btnPlay);
+            grpPreview.Controls.Add(lblPlaySpeed);
+            grpPreview.Controls.Add(trbPlaySpeed);
             grpPreview.Controls.Add(btnNext);
-            grpPreview.Controls.Add(btnUndo);
-            grpPreview.Controls.Add(btnDelete);
             grpPreview.Controls.Add(btnSave);
             grpPreview.Controls.Add(lblCurrentIndex);
             grpPreview.Controls.Add(lblCurrentImage);
@@ -210,7 +243,7 @@ namespace TeamApp
             picFrame.BorderStyle = BorderStyle.FixedSingle;
             picFrame.Location = new Point(12, 22);
             picFrame.Name = "picFrame";
-            picFrame.Size = new Size(506, 350);
+            picFrame.Size = new Size(506, 268);
             picFrame.SizeMode = PictureBoxSizeMode.Zoom;
             picFrame.TabIndex = 0;
             picFrame.TabStop = false;
@@ -227,7 +260,7 @@ namespace TeamApp
             grpImageEdit.Controls.Add(btnReplaceRegion);
             grpImageEdit.Controls.Add(btnClearSelection);
             grpImageEdit.Controls.Add(btnRestoreImage);
-            grpImageEdit.Location = new Point(12, 378);
+            grpImageEdit.Location = new Point(12, 298);
             grpImageEdit.Name = "grpImageEdit";
             grpImageEdit.Size = new Size(506, 78);
             grpImageEdit.TabIndex = 1;
@@ -293,11 +326,44 @@ namespace TeamApp
             btnRestoreImage.UseVisualStyleBackColor = true;
             btnRestoreImage.Click += btnRestoreImage_Click;
             // 
+            // grpDeleteOps
+            // 
+            grpDeleteOps.Controls.Add(btnDelete);
+            grpDeleteOps.Controls.Add(btnUndo);
+            grpDeleteOps.Location = new Point(12, 384);
+            grpDeleteOps.Name = "grpDeleteOps";
+            grpDeleteOps.Size = new Size(506, 58);
+            grpDeleteOps.TabIndex = 2;
+            grpDeleteOps.TabStop = false;
+            grpDeleteOps.Text = "이미지 삭제 / 복구";
+            // 
+            // btnDelete
+            // 
+            btnDelete.BackColor = Color.Red;
+            btnDelete.ForeColor = Color.White;
+            btnDelete.Location = new Point(12, 22);
+            btnDelete.Name = "btnDelete";
+            btnDelete.Size = new Size(180, 28);
+            btnDelete.TabIndex = 8;
+            btnDelete.Text = "이미지 삭제";
+            btnDelete.UseVisualStyleBackColor = false;
+            btnDelete.Click += btnDelete_Click;
+            // 
+            // btnUndo
+            // 
+            btnUndo.Location = new Point(268, 22);
+            btnUndo.Name = "btnUndo";
+            btnUndo.Size = new Size(180, 28);
+            btnUndo.TabIndex = 7;
+            btnUndo.Text = "삭제 이미지 복구";
+            btnUndo.UseVisualStyleBackColor = true;
+            btnUndo.Click += btnUndo_Click;
+            // 
             // pnlTimeline
             // 
             pnlTimeline.BackColor = Color.White;
             pnlTimeline.BorderStyle = BorderStyle.FixedSingle;
-            pnlTimeline.Location = new Point(12, 462);
+            pnlTimeline.Location = new Point(12, 450);
             pnlTimeline.Name = "pnlTimeline";
             pnlTimeline.Size = new Size(506, 18);
             pnlTimeline.TabIndex = 2;
@@ -306,7 +372,7 @@ namespace TeamApp
             // trbFrame
             // 
             trbFrame.LargeChange = 1;
-            trbFrame.Location = new Point(12, 482);
+            trbFrame.Location = new Point(12, 470);
             trbFrame.Maximum = 0;
             trbFrame.Name = "trbFrame";
             trbFrame.Size = new Size(506, 45);
@@ -315,9 +381,9 @@ namespace TeamApp
             // 
             // btnPrev
             // 
-            btnPrev.Location = new Point(12, 526);
+            btnPrev.Location = new Point(12, 517);
             btnPrev.Name = "btnPrev";
-            btnPrev.Size = new Size(70, 30);
+            btnPrev.Size = new Size(122, 30);
             btnPrev.TabIndex = 4;
             btnPrev.Text = "이전";
             btnPrev.UseVisualStyleBackColor = true;
@@ -325,53 +391,51 @@ namespace TeamApp
             // 
             // btnPlay
             // 
-            btnPlay.Location = new Point(90, 526);
+            btnPlay.Location = new Point(142, 517);
             btnPlay.Name = "btnPlay";
-            btnPlay.Size = new Size(92, 30);
+            btnPlay.Size = new Size(122, 30);
             btnPlay.TabIndex = 5;
             btnPlay.Text = "자동 재생";
             btnPlay.UseVisualStyleBackColor = true;
             btnPlay.Click += btnPlay_Click;
             // 
+            // lblPlaySpeed
+            // 
+            lblPlaySpeed.Location = new Point(142, 550);
+            lblPlaySpeed.Name = "lblPlaySpeed";
+            lblPlaySpeed.Size = new Size(90, 20);
+            lblPlaySpeed.TabIndex = 6;
+            lblPlaySpeed.Text = "재생속도 250ms";
+            // 
+            // trbPlaySpeed
+            // 
+            trbPlaySpeed.Location = new Point(238, 547);
+            trbPlaySpeed.Maximum = 20;
+            trbPlaySpeed.Minimum = 1;
+            trbPlaySpeed.Name = "trbPlaySpeed";
+            trbPlaySpeed.Size = new Size(140, 45);
+            trbPlaySpeed.TabIndex = 7;
+            trbPlaySpeed.TickFrequency = 2;
+            trbPlaySpeed.Value = 4;
+            trbPlaySpeed.Scroll += trbPlaySpeed_Scroll;
+            // 
             // btnNext
             // 
-            btnNext.Location = new Point(190, 526);
+            btnNext.Location = new Point(272, 517);
             btnNext.Name = "btnNext";
-            btnNext.Size = new Size(70, 30);
+            btnNext.Size = new Size(122, 30);
             btnNext.TabIndex = 6;
             btnNext.Text = "다음";
             btnNext.UseVisualStyleBackColor = true;
             btnNext.Click += btnNext_Click;
             // 
-            // btnUndo
-            // 
-            btnUndo.Location = new Point(268, 526);
-            btnUndo.Name = "btnUndo";
-            btnUndo.Size = new Size(86, 30);
-            btnUndo.TabIndex = 7;
-            btnUndo.Text = "삭제 취소";
-            btnUndo.UseVisualStyleBackColor = true;
-            btnUndo.Click += btnUndo_Click;
-            // 
-            // btnDelete
-            // 
-            btnDelete.BackColor = Color.Red;
-            btnDelete.ForeColor = Color.White;
-            btnDelete.Location = new Point(360, 526);
-            btnDelete.Name = "btnDelete";
-            btnDelete.Size = new Size(60, 30);
-            btnDelete.TabIndex = 8;
-            btnDelete.Text = "삭제";
-            btnDelete.UseVisualStyleBackColor = false;
-            btnDelete.Click += btnDelete_Click;
-            // 
             // btnSave
             // 
             btnSave.BackColor = Color.LimeGreen;
             btnSave.ForeColor = Color.White;
-            btnSave.Location = new Point(428, 526);
+            btnSave.Location = new Point(402, 517);
             btnSave.Name = "btnSave";
-            btnSave.Size = new Size(80, 30);
+            btnSave.Size = new Size(110, 30);
             btnSave.TabIndex = 9;
             btnSave.Text = "저장";
             btnSave.UseVisualStyleBackColor = false;
@@ -379,7 +443,7 @@ namespace TeamApp
             // 
             // lblCurrentIndex
             // 
-            lblCurrentIndex.Location = new Point(12, 565);
+            lblCurrentIndex.Location = new Point(12, 555);
             lblCurrentIndex.Name = "lblCurrentIndex";
             lblCurrentIndex.Size = new Size(506, 20);
             lblCurrentIndex.TabIndex = 10;
@@ -388,7 +452,7 @@ namespace TeamApp
             // lblCurrentImage
             // 
             lblCurrentImage.AutoEllipsis = true;
-            lblCurrentImage.Location = new Point(12, 588);
+            lblCurrentImage.Location = new Point(12, 578);
             lblCurrentImage.Name = "lblCurrentImage";
             lblCurrentImage.Size = new Size(506, 20);
             lblCurrentImage.TabIndex = 11;
@@ -397,7 +461,7 @@ namespace TeamApp
             // lblCurrentMode
             // 
             lblCurrentMode.AutoEllipsis = true;
-            lblCurrentMode.Location = new Point(12, 611);
+            lblCurrentMode.Location = new Point(12, 601);
             lblCurrentMode.Name = "lblCurrentMode";
             lblCurrentMode.Size = new Size(506, 20);
             lblCurrentMode.TabIndex = 12;
@@ -405,7 +469,7 @@ namespace TeamApp
             // 
             // lblAngle
             // 
-            lblAngle.Location = new Point(12, 637);
+            lblAngle.Location = new Point(12, 627);
             lblAngle.Name = "lblAngle";
             lblAngle.Size = new Size(80, 20);
             lblAngle.TabIndex = 13;
@@ -413,14 +477,14 @@ namespace TeamApp
             // 
             // txtAngle
             // 
-            txtAngle.Location = new Point(95, 634);
+            txtAngle.Location = new Point(95, 624);
             txtAngle.Name = "txtAngle";
             txtAngle.Size = new Size(120, 23);
             txtAngle.TabIndex = 14;
             // 
             // lblThrottle
             // 
-            lblThrottle.Location = new Point(235, 637);
+            lblThrottle.Location = new Point(235, 703);
             lblThrottle.Name = "lblThrottle";
             lblThrottle.Size = new Size(80, 20);
             lblThrottle.TabIndex = 15;
@@ -428,14 +492,14 @@ namespace TeamApp
             // 
             // txtThrottle
             // 
-            txtThrottle.Location = new Point(315, 634);
+            txtThrottle.Location = new Point(315, 624);
             txtThrottle.Name = "txtThrottle";
             txtThrottle.Size = new Size(120, 23);
             txtThrottle.TabIndex = 16;
             // 
             // lblGraph
             // 
-            lblGraph.Location = new Point(12, 664);
+            lblGraph.Location = new Point(12, 730);
             lblGraph.Name = "lblGraph";
             lblGraph.Size = new Size(506, 20);
             lblGraph.TabIndex = 17;
@@ -445,7 +509,7 @@ namespace TeamApp
             // 
             picGraph.BackColor = Color.White;
             picGraph.BorderStyle = BorderStyle.FixedSingle;
-            picGraph.Location = new Point(12, 687);
+            picGraph.Location = new Point(12, 753);
             picGraph.Name = "picGraph";
             picGraph.Size = new Size(506, 65);
             picGraph.TabIndex = 18;
@@ -458,6 +522,8 @@ namespace TeamApp
             grpFilter.Controls.Add(chkAngleRange);
             grpFilter.Controls.Add(chkThrottleRange);
             grpFilter.Controls.Add(chkAnomalyOnly);
+            grpFilter.Controls.Add(chkDeletedOnly);
+            grpFilter.Controls.Add(chkEditedOnly);
             grpFilter.Controls.Add(lblRangeMin);
             grpFilter.Controls.Add(lblRangeMax);
             grpFilter.Controls.Add(numAngleMin);
@@ -468,7 +534,7 @@ namespace TeamApp
             grpFilter.Controls.Add(btnClearFilter);
             grpFilter.Location = new Point(832, 52);
             grpFilter.Name = "grpFilter";
-            grpFilter.Size = new Size(380, 235);
+            grpFilter.Size = new Size(380, 285);
             grpFilter.TabIndex = 5;
             grpFilter.TabStop = false;
             grpFilter.Text = "데이터 필터링";
@@ -488,7 +554,7 @@ namespace TeamApp
             chkExcludeAngleZero.Name = "chkExcludeAngleZero";
             chkExcludeAngleZero.Size = new Size(110, 24);
             chkExcludeAngleZero.TabIndex = 1;
-            chkExcludeAngleZero.Text = "angle = 0 제외";
+            chkExcludeAngleZero.Text = "angle=0 제외";
             chkExcludeAngleZero.UseVisualStyleBackColor = true;
             // 
             // chkAngleRange
@@ -513,10 +579,28 @@ namespace TeamApp
             // 
             chkAnomalyOnly.Location = new Point(14, 156);
             chkAnomalyOnly.Name = "chkAnomalyOnly";
-            chkAnomalyOnly.Size = new Size(180, 24);
+            chkAnomalyOnly.Size = new Size(170, 24);
             chkAnomalyOnly.TabIndex = 4;
-            chkAnomalyOnly.Text = "이상 주행 후보만 표시";
+            chkAnomalyOnly.Text = "이상 후보만 표시";
             chkAnomalyOnly.UseVisualStyleBackColor = true;
+            // 
+            // chkDeletedOnly
+            // 
+            chkDeletedOnly.Location = new Point(14, 186);
+            chkDeletedOnly.Name = "chkDeletedOnly";
+            chkDeletedOnly.Size = new Size(150, 24);
+            chkDeletedOnly.TabIndex = 13;
+            chkDeletedOnly.Text = "삭제 이미지만";
+            chkDeletedOnly.UseVisualStyleBackColor = true;
+            // 
+            // chkEditedOnly
+            // 
+            chkEditedOnly.Location = new Point(14, 216);
+            chkEditedOnly.Name = "chkEditedOnly";
+            chkEditedOnly.Size = new Size(150, 24);
+            chkEditedOnly.TabIndex = 14;
+            chkEditedOnly.Text = "교체/편집만";
+            chkEditedOnly.UseVisualStyleBackColor = true;
             // 
             // lblRangeMin
             // 
@@ -583,9 +667,9 @@ namespace TeamApp
             // 
             // btnApplyFilter
             // 
-            btnApplyFilter.Location = new Point(14, 194);
+            btnApplyFilter.Location = new Point(14, 245);
             btnApplyFilter.Name = "btnApplyFilter";
-            btnApplyFilter.Size = new Size(100, 30);
+            btnApplyFilter.Size = new Size(110, 30);
             btnApplyFilter.TabIndex = 11;
             btnApplyFilter.Text = "필터 적용";
             btnApplyFilter.UseVisualStyleBackColor = true;
@@ -593,9 +677,9 @@ namespace TeamApp
             // 
             // btnClearFilter
             // 
-            btnClearFilter.Location = new Point(122, 194);
+            btnClearFilter.Location = new Point(132, 245);
             btnClearFilter.Name = "btnClearFilter";
-            btnClearFilter.Size = new Size(110, 30);
+            btnClearFilter.Size = new Size(120, 30);
             btnClearFilter.TabIndex = 12;
             btnClearFilter.Text = "필터 초기화";
             btnClearFilter.UseVisualStyleBackColor = true;
@@ -612,7 +696,7 @@ namespace TeamApp
             grpAnomaly.Controls.Add(btnNextAnomaly);
             grpAnomaly.Controls.Add(lblAnomalyStatus);
             grpAnomaly.Controls.Add(lblAnomalyHint);
-            grpAnomaly.Location = new Point(832, 295);
+            grpAnomaly.Location = new Point(832, 342);
             grpAnomaly.Name = "grpAnomaly";
             grpAnomaly.Size = new Size(380, 188);
             grpAnomaly.TabIndex = 6;
@@ -706,13 +790,14 @@ namespace TeamApp
             // grpTrain
             // 
             grpTrain.Controls.Add(lblCommand);
+            grpTrain.Controls.Add(chkManualCommandEdit);
             grpTrain.Controls.Add(txtTrainCommand);
+            grpTrain.Controls.Add(btnTrainingPaths);
             grpTrain.Controls.Add(btnTrain);
-            grpTrain.Controls.Add(btnCheckDonkey);
             grpTrain.Controls.Add(lblHint);
-            grpTrain.Location = new Point(832, 495);
+            grpTrain.Location = new Point(832, 552);
             grpTrain.Name = "grpTrain";
-            grpTrain.Size = new Size(380, 160);
+            grpTrain.Size = new Size(380, 210);
             grpTrain.TabIndex = 7;
             grpTrain.TabStop = false;
             grpTrain.Text = "AI 학습 실행(C# -> Python/DonkeyCar)";
@@ -725,50 +810,71 @@ namespace TeamApp
             lblCommand.TabIndex = 0;
             lblCommand.Text = "학습 명령";
             // 
+            // chkManualCommandEdit
+            // 
+            chkManualCommandEdit.Location = new Point(250, 23);
+            chkManualCommandEdit.Name = "chkManualCommandEdit";
+            chkManualCommandEdit.Size = new Size(115, 24);
+            chkManualCommandEdit.TabIndex = 1;
+            chkManualCommandEdit.Text = "수동 편집";
+            chkManualCommandEdit.UseVisualStyleBackColor = true;
+            chkManualCommandEdit.CheckedChanged += chkManualCommandEdit_CheckedChanged;
+            // 
             // txtTrainCommand
             // 
             txtTrainCommand.Location = new Point(14, 48);
             txtTrainCommand.Multiline = true;
             txtTrainCommand.Name = "txtTrainCommand";
+            txtTrainCommand.ReadOnly = true;
             txtTrainCommand.ScrollBars = ScrollBars.Vertical;
-            txtTrainCommand.Size = new Size(350, 55);
+            txtTrainCommand.Size = new Size(350, 58);
             txtTrainCommand.TabIndex = 1;
-            txtTrainCommand.Text = "donkey train --tub \"{DATA_FOLDER}\" --model \"{ROOT_FOLDER}\\models\\mypilot.h5\"";
+            txtTrainCommand.Text = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
+            // 
+            // btnTrainingPaths
+            // 
+            btnTrainingPaths.Location = new Point(14, 114);
+            btnTrainingPaths.Name = "btnTrainingPaths";
+            btnTrainingPaths.Size = new Size(132, 30);
+            btnTrainingPaths.TabIndex = 4;
+            btnTrainingPaths.Text = "학습 명령 생성";
+            btnTrainingPaths.UseVisualStyleBackColor = true;
+            btnTrainingPaths.Click += btnTrainingPaths_Click;
             // 
             // btnTrain
             // 
-            btnTrain.Location = new Point(14, 111);
+            btnTrain.Location = new Point(154, 114);
             btnTrain.Name = "btnTrain";
-            btnTrain.Size = new Size(100, 30);
+            btnTrain.Size = new Size(104, 30);
             btnTrain.TabIndex = 2;
             btnTrain.Text = "학습 실행";
             btnTrain.UseVisualStyleBackColor = true;
             btnTrain.Click += btnTrain_Click;
             // 
-            // btnCheckDonkey
-            // 
-            btnCheckDonkey.Location = new Point(122, 111);
-            btnCheckDonkey.Name = "btnCheckDonkey";
-            btnCheckDonkey.Size = new Size(100, 30);
-            btnCheckDonkey.TabIndex = 3;
-            btnCheckDonkey.Text = "환경 진단";
-            btnCheckDonkey.UseVisualStyleBackColor = true;
-            btnCheckDonkey.Click += btnCheckDonkey_Click;
-            // 
             // lblHint
             // 
-            lblHint.Location = new Point(230, 108);
+            lblHint.Location = new Point(14, 150);
             lblHint.Name = "lblHint";
-            lblHint.Size = new Size(140, 48);
-            lblHint.TabIndex = 4;
-            lblHint.Text = "사용 가능: {ROOT_FOLDER}, {DATA_FOLDER}";
+            lblHint.Size = new Size(350, 44);
+            lblHint.TabIndex = 5;
+            lblHint.Text = "먼저 [학습 명령 생성]을 눌러 환경/경로를 확정하세요. 수동 편집은 체크 후 가능합니다.";
+            // 
+            // btnCheckDonkey
+            // 
+            btnCheckDonkey.Location = new Point(0, 0);
+            btnCheckDonkey.Name = "btnCheckDonkey";
+            btnCheckDonkey.Size = new Size(1, 1);
+            btnCheckDonkey.TabIndex = 3;
+            btnCheckDonkey.UseVisualStyleBackColor = true;
+            btnCheckDonkey.Visible = false;
+            btnCheckDonkey.Click += btnCheckDonkey_Click;
             // 
             // grpLog
             // 
             grpLog.Controls.Add(txtLog);
-            grpLog.Location = new Point(832, 665);
+            grpLog.Location = new Point(832, 752);
             grpLog.Name = "grpLog";
-            grpLog.Size = new Size(380, 147);
+            grpLog.Size = new Size(380, 127);
             grpLog.TabIndex = 8;
             grpLog.TabStop = false;
             grpLog.Text = "실행 로그";
@@ -787,6 +893,7 @@ namespace TeamApp
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
+            AutoScroll = true;
             BackColor = Color.FromArgb(248, 248, 248);
             ClientSize = new Size(1224, 821);
             Controls.Add(btnOpenFolder);
@@ -799,7 +906,7 @@ namespace TeamApp
             Controls.Add(grpTrain);
             Controls.Add(grpLog);
             Font = new Font("맑은 고딕", 9F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            MinimumSize = new Size(1180, 800);
+            MinimumSize = new Size(980, 650);
             Name = "Form1";
             Text = "DonkeyCar UI 데이터 관리 도구";
             grpList.ResumeLayout(false);
@@ -807,7 +914,9 @@ namespace TeamApp
             grpPreview.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).EndInit();
             grpImageEdit.ResumeLayout(false);
+            grpDeleteOps.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)trbFrame).EndInit();
+            ((System.ComponentModel.ISupportInitialize)trbPlaySpeed).EndInit();
             ((System.ComponentModel.ISupportInitialize)picGraph).EndInit();
             grpFilter.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)numAngleMin).EndInit();
@@ -831,7 +940,9 @@ namespace TeamApp
         private System.Windows.Forms.Button btnOpenDataFolder = null!;
         private System.Windows.Forms.TextBox txtSelectedFolder = null!;
         private System.Windows.Forms.GroupBox grpList = null!;
-        private System.Windows.Forms.ListBox lstFrames = null!;
+        private TeamApp.ColoredCheckedListBox lstFrames = null!;
+        private System.Windows.Forms.Button btnCheckAllFrames = null!;
+        private System.Windows.Forms.Button btnClearCheckedFrames = null!;
         private System.Windows.Forms.Label lblStats = null!;
         private System.Windows.Forms.GroupBox grpPreview = null!;
         private System.Windows.Forms.PictureBox picFrame = null!;
@@ -842,11 +953,14 @@ namespace TeamApp
         private System.Windows.Forms.Button btnReplaceRegion = null!;
         private System.Windows.Forms.Button btnClearSelection = null!;
         private System.Windows.Forms.Button btnRestoreImage = null!;
+        private System.Windows.Forms.GroupBox grpDeleteOps = null!;
         private System.Windows.Forms.Panel pnlTimeline = null!;
         private System.Windows.Forms.TrackBar trbFrame = null!;
         private System.Windows.Forms.Button btnPrev = null!;
         private System.Windows.Forms.Button btnNext = null!;
         private System.Windows.Forms.Button btnPlay = null!;
+        private System.Windows.Forms.Label lblPlaySpeed = null!;
+        private System.Windows.Forms.TrackBar trbPlaySpeed = null!;
         private System.Windows.Forms.Button btnSave = null!;
         private System.Windows.Forms.Button btnDelete = null!;
         private System.Windows.Forms.Button btnUndo = null!;
@@ -865,6 +979,8 @@ namespace TeamApp
         private System.Windows.Forms.CheckBox chkAngleRange = null!;
         private System.Windows.Forms.CheckBox chkThrottleRange = null!;
         private System.Windows.Forms.CheckBox chkAnomalyOnly = null!;
+        private System.Windows.Forms.CheckBox chkDeletedOnly = null!;
+        private System.Windows.Forms.CheckBox chkEditedOnly = null!;
         private System.Windows.Forms.Label lblRangeMin = null!;
         private System.Windows.Forms.Label lblRangeMax = null!;
         private System.Windows.Forms.NumericUpDown numAngleMin = null!;
@@ -888,6 +1004,8 @@ namespace TeamApp
         private System.Windows.Forms.TextBox txtTrainCommand = null!;
         private System.Windows.Forms.Button btnTrain = null!;
         private System.Windows.Forms.Button btnCheckDonkey = null!;
+        private System.Windows.Forms.Button btnTrainingPaths = null!;
+        private System.Windows.Forms.CheckBox chkManualCommandEdit = null!;
         private System.Windows.Forms.Label lblHint = null!;
         private System.Windows.Forms.GroupBox grpLog = null!;
         private System.Windows.Forms.TextBox txtLog = null!;

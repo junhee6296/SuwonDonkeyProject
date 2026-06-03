@@ -14,6 +14,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Windows.Forms.VisualStyles;
 
 namespace TeamApp
 {
@@ -31,7 +32,14 @@ namespace TeamApp
         private string rootFolder = string.Empty;
         private string dataFolder = string.Empty;
         private string imagesFolder = string.Empty;
-        private DeletedRecord? lastDeleted;
+        private string trainingDataPathOverride = string.Empty;
+        private string trainingModelPathOverride = string.Empty;
+        private string trainingSshPassword = string.Empty;
+        private bool trainingUseSshPasswordInput;
+        private bool trainingCommandGenerated;
+        private const string TrainingCommandPlaceholder = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
+        private const string SshPasswordPlaceholder = "{SSH_PASSWORD}";
+        private readonly HashSet<int> checkedFrameOrders = new HashSet<int>();
         private int currentVisibleIndex = -1;
 
         private string loadedImagePath = string.Empty;
@@ -63,14 +71,224 @@ namespace TeamApp
             cmbMaskMode.SelectedIndex = Math.Min(2, Math.Max(0, cmbMaskMode.Items.Count - 1));
             pnlTimeline.MouseClick += pnlTimeline_MouseClick;
             chkAnomalyOnly.CheckedChanged += chkAnomalyOnly_CheckedChanged;
+            chkDeletedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
+            chkEditedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
+            btnClearCheckedFrames.Text = "전체 해제";
+            btnDelete.Text = "이미지 삭제";
+            btnUndo.Text = "삭제 이미지 복구";
+            chkDeletedOnly.Text = "삭제 이미지만";
+            chkEditedOnly.Text = "교체/편집만";
+            btnCheckDonkey.Visible = false;
+            grpTrain.Text = "AI 학습";
+            lblCommand.Visible = false;
+            chkManualCommandEdit.Visible = false;
+            txtTrainCommand.Visible = false;
+            btnTrain.Visible = false;
+            btnCheckDonkey.Visible = false;
+            btnTrainingPaths.Text = "AI 학습";
+            lblHint.Text = "AI 학습 버튼을 눌러 학습 환경, 경로, 실행 명령, 학습 결과를 별도 창에서 관리하세요.";
+            lstFrames.CheckOnClick = false;
+            lstFrames.ResolveVisualState = index => index >= 0 && index < visibleFrames.Count
+                ? new FrameListVisualState(visibleFrames[index].Deleted, visibleFrames[index].Edited, visibleFrames[index].IsAnomaly)
+                : FrameListVisualState.Normal;
+            UpdateAutoPlaySpeedLabel();
+            ResetTrainingCommandState();
+            Resize += (_, _) => ApplyResponsiveLayout();
 
-            autoPlayTimer.Interval = 250;
+            autoPlayTimer.Interval = GetAutoPlayInterval();
             autoPlayTimer.Tick += (_, _) => MoveSelection(1, true);
 
             DrawPlaceholder(picFrame, "폴더를 열면 이미지가 표시됩니다.\n이미지 편집은 '이미지 / 프레임 탐색 · 편집' 영역에서 사용하세요.");
             DrawPlaceholder(picGraph, "데이터 그래프");
+            ApplyResponsiveLayout();
             DrawTimeline();
             UpdateSelectionLabel();
+        }
+
+        private void ApplyResponsiveLayout()
+        {
+            if (LicenseManager.UsageMode == LicenseUsageMode.Designtime || grpList == null)
+            {
+                return;
+            }
+
+            SuspendLayout();
+            try
+            {
+                var margin = 12;
+                var gap = 10;
+                var top = 12;
+                var topHeight = 30;
+                var contentTop = 52;
+                var contentHeight = Math.Max(560, ClientSize.Height - contentTop - margin);
+                var clientWidth = Math.Max(980, ClientSize.Width);
+                var rightWidth = ClampInt((int)(clientWidth * 0.31), 340, 430);
+                var leftWidth = ClampInt((int)(clientWidth * 0.23), 260, 360);
+                var centerWidth = clientWidth - margin * 2 - gap * 2 - leftWidth - rightWidth;
+                if (centerWidth < 440)
+                {
+                    var deficit = 440 - centerWidth;
+                    rightWidth = Math.Max(320, rightWidth - deficit / 2);
+                    leftWidth = Math.Max(240, leftWidth - deficit / 2);
+                    centerWidth = clientWidth - margin * 2 - gap * 2 - leftWidth - rightWidth;
+                }
+
+                btnOpenFolder.SetBounds(margin, top, 96, topHeight);
+                btnOpenDataFolder.SetBounds(clientWidth - margin - 210, top, 210, topHeight);
+                txtSelectedFolder.SetBounds(btnOpenFolder.Right + gap, top + 3, Math.Max(220, btnOpenDataFolder.Left - btnOpenFolder.Right - gap * 2), 23);
+
+                grpList.SetBounds(margin, contentTop, leftWidth, contentHeight);
+                grpPreview.SetBounds(grpList.Right + gap, contentTop, Math.Max(360, centerWidth), contentHeight);
+                var rightX = grpPreview.Right + gap;
+                grpFilter.SetBounds(rightX, contentTop, rightWidth, 285);
+                grpAnomaly.SetBounds(rightX, grpFilter.Bottom + gap, rightWidth, 190);
+                grpTrain.SetBounds(rightX, grpAnomaly.Bottom + gap, rightWidth, 120);
+                grpLog.SetBounds(rightX, grpTrain.Bottom + gap, rightWidth, Math.Max(100, contentTop + contentHeight - (grpTrain.Bottom + gap)));
+
+                LayoutFrameList();
+                LayoutPreviewPanel();
+                LayoutFilterPanel();
+                LayoutAnomalyPanel();
+                LayoutTrainPanel();
+                LayoutLogPanel();
+            }
+            finally
+            {
+                ResumeLayout(false);
+            }
+        }
+
+        private void LayoutFrameList()
+        {
+            var w = grpList.ClientSize.Width;
+            var h = grpList.ClientSize.Height;
+            var selectionButtonWidth = Math.Max(96, (w - 28) / 2);
+            btnCheckAllFrames.SetBounds(10, 24, selectionButtonWidth, 28);
+            btnClearCheckedFrames.SetBounds(btnCheckAllFrames.Right + 8, 24, selectionButtonWidth, 28);
+            lstFrames.SetBounds(10, 58, Math.Max(120, w - 20), Math.Max(140, h - 150));
+            lblStats.SetBounds(10, lstFrames.Bottom + 8, Math.Max(120, w - 20), Math.Max(56, h - lstFrames.Bottom - 14));
+            UpdateFrameListHorizontalExtent();
+        }
+
+        private void LayoutPreviewPanel()
+        {
+            var w = grpPreview.ClientSize.Width;
+            var h = grpPreview.ClientSize.Height;
+            var innerW = Math.Max(320, w - 24);
+            var graphHeight = 70;
+            var bottomInfoHeight = 176;
+            var editHeight = 78;
+            var deleteHeight = 64;
+            var pictureHeight = Math.Max(190, h - 24 - editHeight - deleteHeight - 22 - 45 - 36 - bottomInfoHeight - graphHeight);
+
+            picFrame.SetBounds(12, 22, innerW, pictureHeight);
+            grpImageEdit.SetBounds(12, picFrame.Bottom + 8, innerW, editHeight);
+            lblEditHint.SetBounds(10, 20, Math.Max(120, grpImageEdit.ClientSize.Width - 20), 18);
+            cmbMaskMode.SetBounds(10, 44, 80, 23);
+            var btnY = 42;
+            var buttonW = Math.Max(80, (grpImageEdit.ClientSize.Width - 110) / 4);
+            btnMaskRegion.SetBounds(98, btnY, buttonW, 27);
+            btnReplaceRegion.SetBounds(btnMaskRegion.Right + 6, btnY, buttonW + 10, 27);
+            btnClearSelection.SetBounds(btnReplaceRegion.Right + 6, btnY, buttonW, 27);
+            btnRestoreImage.SetBounds(btnClearSelection.Right + 6, btnY, Math.Max(90, grpImageEdit.ClientSize.Width - btnClearSelection.Right - 16), 27);
+
+            grpDeleteOps.SetBounds(12, grpImageEdit.Bottom + 8, innerW, deleteHeight);
+            var deleteButtonW = Math.Max(120, (grpDeleteOps.ClientSize.Width - 30) / 2);
+            btnDelete.SetBounds(10, 24, deleteButtonW, 28);
+            btnUndo.SetBounds(btnDelete.Right + 10, 24, deleteButtonW, 28);
+
+            pnlTimeline.SetBounds(12, grpDeleteOps.Bottom + 8, innerW, 18);
+            trbFrame.SetBounds(12, pnlTimeline.Bottom + 2, innerW, 45);
+
+            var btnTop = trbFrame.Bottom + 2;
+            var gap = 8;
+            var buttonWidth = Math.Max(54, (innerW - gap * 3) / 4);
+            btnPrev.SetBounds(12, btnTop, buttonWidth, 30);
+            btnPlay.SetBounds(btnPrev.Right + gap, btnTop, buttonWidth, 30);
+            btnNext.SetBounds(btnPlay.Right + gap, btnTop, buttonWidth, 30);
+            btnSave.SetBounds(btnNext.Right + gap, btnTop, buttonWidth, 30);
+
+            var speedTop = btnTop + 36;
+            lblPlaySpeed.SetBounds(btnPlay.Left, speedTop + 4, Math.Max(110, buttonWidth), 20);
+            trbPlaySpeed.SetBounds(lblPlaySpeed.Right + 6, speedTop, Math.Max(120, btnSave.Right - lblPlaySpeed.Right - 6), 35);
+
+            var infoTop = speedTop + 38;
+            lblCurrentIndex.SetBounds(12, infoTop, innerW, 20);
+            lblCurrentImage.SetBounds(12, infoTop + 23, innerW, 20);
+            lblCurrentMode.SetBounds(12, infoTop + 46, innerW, 20);
+            lblAngle.SetBounds(12, infoTop + 72, 70, 20);
+            txtAngle.SetBounds(86, infoTop + 69, Math.Max(100, innerW / 4), 23);
+            lblThrottle.SetBounds(txtAngle.Right + 24, infoTop + 72, 80, 20);
+            txtThrottle.SetBounds(lblThrottle.Right + 8, infoTop + 69, Math.Max(100, innerW / 4), 23);
+            lblGraph.SetBounds(12, infoTop + 100, innerW, 20);
+            picGraph.SetBounds(12, infoTop + 123, innerW, Math.Max(50, grpPreview.ClientSize.Height - (infoTop + 135)));
+
+            DrawGraph();
+            DrawTimeline();
+        }
+
+        private void LayoutFilterPanel()
+        {
+            var w = grpFilter.ClientSize.Width;
+            var valueLeft = Math.Max(140, w - 230);
+            var maxLeft = Math.Max(valueLeft + 110, w - 108);
+
+            chkThrottlePositive.SetBounds(14, 28, 170, 24);
+            chkExcludeAngleZero.SetBounds(14, 56, 120, 24);
+            chkAngleRange.SetBounds(14, 90, 110, 24);
+            chkThrottleRange.SetBounds(14, 124, 120, 24);
+            chkAnomalyOnly.SetBounds(14, 156, 170, 24);
+            chkDeletedOnly.SetBounds(14, 186, 170, 24);
+            chkEditedOnly.SetBounds(14, 216, 170, 24);
+
+            lblRangeMin.SetBounds(valueLeft, 72, 50, 18);
+            lblRangeMax.SetBounds(maxLeft, 72, 50, 18);
+            numAngleMin.SetBounds(valueLeft, 90, 95, 23);
+            numAngleMax.SetBounds(maxLeft, 90, 95, 23);
+            numThrottleMin.SetBounds(valueLeft, 124, 95, 23);
+            numThrottleMax.SetBounds(maxLeft, 124, 95, 23);
+            btnApplyFilter.SetBounds(14, grpFilter.ClientSize.Height - 40, 100, 30);
+            btnClearFilter.SetBounds(122, grpFilter.ClientSize.Height - 40, 110, 30);
+        }
+
+        private void LayoutAnomalyPanel()
+        {
+            var w = grpAnomaly.ClientSize.Width;
+            lblAnomalyWindow.SetBounds(14, 28, 120, 20);
+            numAnomalyWindow.SetBounds(140, 26, 80, 23);
+            lblAnomalySigma.SetBounds(230, 28, 60, 20);
+            numAnomalySigma.SetBounds(Math.Min(292, w - 76), 26, 65, 23);
+            btnAnalyzeAnomaly.SetBounds(14, 62, 120, 30);
+            btnClearAnomaly.SetBounds(144, 62, 110, 30);
+            btnNextAnomaly.SetBounds(264, 62, Math.Max(88, w - 278), 30);
+            lblAnomalyStatus.SetBounds(14, 104, Math.Max(180, w - 28), 22);
+            lblAnomalyHint.SetBounds(14, 130, Math.Max(180, w - 28), Math.Max(40, grpAnomaly.ClientSize.Height - 136));
+        }
+
+        private void LayoutTrainPanel()
+        {
+            var w = grpTrain.ClientSize.Width;
+            lblCommand.Visible = false;
+            chkManualCommandEdit.Visible = false;
+            txtTrainCommand.Visible = false;
+            btnTrain.Visible = false;
+            btnCheckDonkey.Visible = false;
+
+            var buttonWidth = Math.Max(160, Math.Min(260, w - 28));
+            btnTrainingPaths.Text = "AI 학습";
+            btnTrainingPaths.SetBounds(14, 28, buttonWidth, 38);
+            lblHint.SetBounds(14, 74, Math.Max(180, w - 28), Math.Max(34, grpTrain.ClientSize.Height - 82));
+            lblHint.Text = "학습 환경/경로/명령 실행/성공률은 AI 학습 창에서 관리합니다.";
+        }
+
+        private void LayoutLogPanel()
+        {
+            txtLog.SetBounds(10, 22, Math.Max(180, grpLog.ClientSize.Width - 20), Math.Max(60, grpLog.ClientSize.Height - 32));
+        }
+
+        private static int ClampInt(int value, int min, int max)
+        {
+            return Math.Max(min, Math.Min(max, value));
         }
 
         private void btnOpenFolder_Click(object? sender, EventArgs e)
@@ -122,9 +340,10 @@ namespace TeamApp
             dataFolder = resolvedData;
             imagesFolder = resolvedImages;
             txtSelectedFolder.Text = selectedPath;
+            RefreshTrainingPathDefaults(false);
             allFrames.Clear();
             visibleFrames.Clear();
-            lastDeleted = null;
+            checkedFrameOrders.Clear();
             currentVisibleIndex = -1;
             loadedImagePath = string.Empty;
             selectedImageRect = null;
@@ -151,6 +370,7 @@ namespace TeamApp
                 }
 
                 allFrames.Sort((a, b) => a.GlobalOrder.CompareTo(b.GlobalOrder));
+                LoadUiMarks();
                 DetectAnomalies(false);
                 ApplyFilters(allFrames[0].GlobalOrder);
                 AppendLog($"데이터 로드 완료: catalog {catalogs.Length}개, frame {allFrames.Count}개");
@@ -432,17 +652,20 @@ namespace TeamApp
         {
             var previousGlobalOrder = preferredGlobalOrder ?? CurrentRecord()?.GlobalOrder;
 
+            PreserveCheckedOrders();
             visibleFrames.Clear();
-            visibleFrames.AddRange(allFrames.Where(record => !record.Deleted && PassesFilter(record)).OrderBy(record => record.GlobalOrder));
+            visibleFrames.AddRange(allFrames.Where(PassesFilter).OrderBy(record => record.GlobalOrder));
 
             lstFrames.BeginUpdate();
             lstFrames.Items.Clear();
             foreach (var record in visibleFrames)
             {
-                lstFrames.Items.Add(ToListText(record));
+                lstFrames.Items.Add(ToListText(record), checkedFrameOrders.Contains(record.GlobalOrder));
             }
             lstFrames.EndUpdate();
             UpdateFrameListHorizontalExtent();
+            lstFrames.Invalidate();
+            lstFrames.Refresh();
 
             trbFrame.Minimum = 0;
             trbFrame.Maximum = Math.Max(0, visibleFrames.Count - 1);
@@ -473,6 +696,17 @@ namespace TeamApp
 
         private bool PassesFilter(FrameRecord record)
         {
+            if (chkDeletedOnly.Checked || chkEditedOnly.Checked)
+            {
+                var matchesStatusFilter =
+                    (chkDeletedOnly.Checked && record.Deleted) ||
+                    (chkEditedOnly.Checked && record.Edited);
+                if (!matchesStatusFilter)
+                {
+                    return false;
+                }
+            }
+
             if (chkAnomalyOnly.Checked && !record.IsAnomaly)
             {
                 return false;
@@ -528,6 +762,8 @@ namespace TeamApp
             chkAngleRange.Checked = false;
             chkThrottleRange.Checked = false;
             chkAnomalyOnly.Checked = false;
+            chkDeletedOnly.Checked = false;
+            chkEditedOnly.Checked = false;
             numAngleMin.Value = -1m;
             numAngleMax.Value = 1m;
             numThrottleMin.Value = 0m;
@@ -538,6 +774,68 @@ namespace TeamApp
         private void chkAnomalyOnly_CheckedChanged(object? sender, EventArgs e)
         {
             ApplyFilters(CurrentRecord()?.GlobalOrder);
+        }
+
+        private void chkStatusFilter_CheckedChanged(object? sender, EventArgs e)
+        {
+            ApplyFilters(CurrentRecord()?.GlobalOrder);
+        }
+
+        private void PreserveCheckedOrders()
+        {
+            for (var i = 0; i < visibleFrames.Count && i < lstFrames.Items.Count; i++)
+            {
+                if (lstFrames.GetItemChecked(i))
+                {
+                    checkedFrameOrders.Add(visibleFrames[i].GlobalOrder);
+                }
+                else
+                {
+                    checkedFrameOrders.Remove(visibleFrames[i].GlobalOrder);
+                }
+            }
+        }
+
+        private List<FrameRecord> GetCheckedRecords()
+        {
+            PreserveCheckedOrders();
+            return visibleFrames
+                .Where(record => checkedFrameOrders.Contains(record.GlobalOrder))
+                .OrderBy(record => record.GlobalOrder)
+                .ToList();
+        }
+
+        private List<FrameRecord> GetTargetRecordsForBatch(bool includeCurrentFallback = true)
+        {
+            var checkedRecords = GetCheckedRecords();
+            if (checkedRecords.Count > 0)
+            {
+                return checkedRecords;
+            }
+
+            var current = includeCurrentFallback ? CurrentRecord() : null;
+            return current == null ? new List<FrameRecord>() : new List<FrameRecord> { current };
+        }
+
+        private void btnCheckAllFrames_Click(object? sender, EventArgs e)
+        {
+            for (var i = 0; i < lstFrames.Items.Count; i++)
+            {
+                lstFrames.SetItemChecked(i, true);
+                if (i < visibleFrames.Count)
+                {
+                    checkedFrameOrders.Add(visibleFrames[i].GlobalOrder);
+                }
+            }
+        }
+
+        private void btnClearCheckedFrames_Click(object? sender, EventArgs e)
+        {
+            for (var i = 0; i < lstFrames.Items.Count; i++)
+            {
+                lstFrames.SetItemChecked(i, false);
+            }
+            checkedFrameOrders.Clear();
         }
 
         private void UpdateFrameListHorizontalExtent()
@@ -560,22 +858,52 @@ namespace TeamApp
 
         private void lstFrames_DrawItem(object? sender, DrawItemEventArgs e)
         {
-            if (e.Index < 0)
+            if (e.Index < 0 || e.Index >= lstFrames.Items.Count)
             {
                 return;
             }
 
-            e.DrawBackground();
+            var record = e.Index < visibleFrames.Count ? visibleFrames[e.Index] : null;
+            var selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            var backColor = selected ? SystemColors.Highlight : e.BackColor;
+            var foreColor = selected ? SystemColors.HighlightText : e.ForeColor;
+
+            if (record != null)
+            {
+                if (record.Deleted)
+                {
+                    backColor = selected ? Color.IndianRed : Color.LightCoral;
+                    foreColor = selected ? Color.White : Color.DarkRed;
+                }
+                else if (record.Edited)
+                {
+                    backColor = selected ? Color.SeaGreen : Color.LightGreen;
+                    foreColor = selected ? Color.White : Color.DarkGreen;
+                }
+                else if (!selected && record.IsAnomaly)
+                {
+                    foreColor = Color.Red;
+                }
+            }
+
+            using (var brush = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+
+            var isChecked = lstFrames.GetItemChecked(e.Index);
+            var checkState = isChecked ? CheckBoxState.CheckedNormal : CheckBoxState.UncheckedNormal;
+            CheckBoxRenderer.DrawCheckBox(e.Graphics, new Point(e.Bounds.Left + 3, e.Bounds.Top + 2), checkState);
+
             var text = lstFrames.Items[e.Index]?.ToString() ?? string.Empty;
-            var isAnomaly = e.Index < visibleFrames.Count && visibleFrames[e.Index].IsAnomaly;
-            var foreColor = isAnomaly ? Color.Red : e.ForeColor;
+            var textRect = new Rectangle(e.Bounds.Left + 24, e.Bounds.Top, Math.Max(10, e.Bounds.Width - 26), e.Bounds.Height);
             TextRenderer.DrawText(
                 e.Graphics,
                 text,
                 e.Font ?? Font,
-                e.Bounds,
+                textRect,
                 foreColor,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
             e.DrawFocusRectangle();
         }
 
@@ -639,6 +967,30 @@ namespace TeamApp
             }
 
             lstFrames.SelectedIndex = index;
+        }
+
+        private int GetAutoPlayInterval()
+        {
+            var value = trbPlaySpeed == null ? 4 : Math.Max(1, trbPlaySpeed.Value);
+            // 오른쪽으로 갈수록 빠르게 재생: 1=1000ms, 20=50ms
+            return Math.Max(50, 1050 - value * 50);
+        }
+
+        private void UpdateAutoPlaySpeedLabel()
+        {
+            if (lblPlaySpeed == null)
+            {
+                return;
+            }
+
+            var interval = GetAutoPlayInterval();
+            lblPlaySpeed.Text = $"재생속도 {interval}ms";
+            autoPlayTimer.Interval = interval;
+        }
+
+        private void trbPlaySpeed_Scroll(object? sender, EventArgs e)
+        {
+            UpdateAutoPlaySpeedLabel();
         }
 
         private void btnPlay_Click(object? sender, EventArgs e)
@@ -719,6 +1071,26 @@ namespace TeamApp
         }
 
         private string ResolveImagePath(FrameRecord record)
+        {
+            var originalPath = ResolveOriginalImagePath(record);
+            if (File.Exists(originalPath))
+            {
+                return originalPath;
+            }
+
+            if (record.Deleted)
+            {
+                var backupPath = ResolveDeletedBackupPath(record);
+                if (!string.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath))
+                {
+                    return backupPath;
+                }
+            }
+
+            return originalPath;
+        }
+
+        private string ResolveOriginalImagePath(FrameRecord record)
         {
             if (string.IsNullOrWhiteSpace(record.ImageFile))
             {
@@ -817,16 +1189,18 @@ namespace TeamApp
 
         private void btnDelete_Click(object? sender, EventArgs e)
         {
-            var record = CurrentRecord();
-            if (record == null)
+            var targets = GetTargetRecordsForBatch()
+                .Where(record => !record.Deleted)
+                .ToList();
+            if (targets.Count == 0)
             {
-                MessageBox.Show("삭제할 프레임을 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("삭제할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             var confirm = MessageBox.Show(
-                "선택한 프레임을 catalog에서 제거하고 이미지 파일을 백업 폴더로 이동할까요?\n삭제 취소 버튼으로 한 번 복구할 수 있습니다.",
-                "삭제 확인",
+                $"선택한 {targets.Count}개 프레임의 이미지 파일을 _deleted_backup 폴더로 이동할까요?\n프레임 목록에서는 빨간색으로 남겨두며, 이미지 복구 버튼으로 되돌릴 수 있습니다.",
+                "이미지 삭제 확인",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
             if (confirm != DialogResult.Yes)
@@ -834,99 +1208,256 @@ namespace TeamApp
                 return;
             }
 
-            var originalImagePath = ResolveImagePath(record);
-            string? backupImagePath = null;
-
-            try
+            var success = 0;
+            foreach (var record in targets)
             {
-                if (File.Exists(originalImagePath))
+                try
                 {
-                    var backupFolder = Path.Combine(dataFolder, "_deleted_backup");
-                    Directory.CreateDirectory(backupFolder);
-                    backupImagePath = Path.Combine(backupFolder, $"{DateTime.Now:yyyyMMddHHmmssfff}_{Path.GetFileName(originalImagePath)}");
-                    File.Move(originalImagePath, backupImagePath);
+                    if (MoveImageToDeletedBackup(record))
+                    {
+                        success++;
+                    }
                 }
-
-                lastDeleted = new DeletedRecord
+                catch (Exception ex)
                 {
-                    Record = record,
-                    OriginalVisibleIndex = currentVisibleIndex,
-                    OriginalImagePath = originalImagePath,
-                    BackupImagePath = backupImagePath
-                };
-
-                record.Deleted = true;
-                RewriteCatalogs();
-                RecalculateAnomaliesIfNeeded();
-
-                var nextIndex = currentVisibleIndex;
-                ApplyFilters(null);
-                if (visibleFrames.Count > 0)
-                {
-                    lstFrames.SelectedIndex = Math.Min(nextIndex, visibleFrames.Count - 1);
+                    AppendLog($"이미지 삭제 실패: {record.ImageFile} / {ex.Message}");
                 }
-
-                AppendLog($"삭제: index={record.Index}, image={record.ImageFile}");
             }
-            catch (Exception ex)
-            {
-                record.Deleted = false;
-                lastDeleted = null;
-                if (!string.IsNullOrWhiteSpace(backupImagePath) && File.Exists(backupImagePath) && !File.Exists(originalImagePath))
-                {
-                    File.Move(backupImagePath, originalImagePath);
-                }
-                ApplyFilters(record.GlobalOrder);
-                MessageBox.Show($"삭제 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+
+            SaveUiMarks();
+            RecalculateAnomaliesIfNeeded();
+            ApplyFilters(targets[0].GlobalOrder);
+            lstFrames.Invalidate();
+            AppendLog($"이미지 삭제: {success}/{targets.Count}개를 _deleted_backup으로 이동");
         }
 
         private void btnUndo_Click(object? sender, EventArgs e)
         {
-            if (lastDeleted == null)
+            var targets = GetTargetRecordsForBatch()
+                .Where(record => record.Deleted)
+                .ToList();
+
+            if (targets.Count == 0)
             {
-                MessageBox.Show("되돌릴 삭제 작업이 없습니다.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("복구할 삭제 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var success = 0;
+            foreach (var record in targets)
+            {
+                try
+                {
+                    if (RestoreImageFromDeletedBackup(record))
+                    {
+                        success++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"이미지 복구 실패: {record.ImageFile} / {ex.Message}");
+                }
+            }
+
+            SaveUiMarks();
+            RecalculateAnomaliesIfNeeded();
+            ApplyFilters(targets[0].GlobalOrder);
+            lstFrames.Invalidate();
+            AppendLog($"이미지 복구: {success}/{targets.Count}개");
+        }
+
+        private bool MoveImageToDeletedBackup(FrameRecord record)
+        {
+            var sourcePath = ResolveOriginalImagePath(record);
+            if (string.IsNullOrWhiteSpace(sourcePath))
+            {
+                throw new InvalidOperationException("이미지 경로가 비어 있습니다.");
+            }
+
+            var backupPath = GetDeletedBackupPath(sourcePath);
+            if (!File.Exists(sourcePath))
+            {
+                if (File.Exists(backupPath))
+                {
+                    record.Deleted = true;
+                    record.DeletedBackupPath = backupPath;
+                    return false;
+                }
+
+                throw new FileNotFoundException("원본 이미지와 삭제 백업을 모두 찾을 수 없습니다.", sourcePath);
+            }
+
+            var backupDirectory = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrWhiteSpace(backupDirectory))
+            {
+                Directory.CreateDirectory(backupDirectory);
+            }
+
+            File.Move(sourcePath, backupPath, true);
+            record.Deleted = true;
+            record.DeletedBackupPath = backupPath;
+            return true;
+        }
+
+        private bool RestoreImageFromDeletedBackup(FrameRecord record)
+        {
+            var targetPath = ResolveOriginalImagePath(record);
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                throw new InvalidOperationException("복구 대상 이미지 경로가 비어 있습니다.");
+            }
+
+            var backupPath = ResolveDeletedBackupPath(record);
+            if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
+            {
+                if (File.Exists(targetPath))
+                {
+                    record.Deleted = false;
+                    record.DeletedBackupPath = string.Empty;
+                    return false;
+                }
+
+                throw new FileNotFoundException("삭제 백업 이미지를 찾을 수 없습니다.", backupPath);
+            }
+
+            var targetDirectory = Path.GetDirectoryName(targetPath);
+            if (!string.IsNullOrWhiteSpace(targetDirectory))
+            {
+                Directory.CreateDirectory(targetDirectory);
+            }
+
+            File.Move(backupPath, targetPath, true);
+            record.Deleted = false;
+            record.DeletedBackupPath = string.Empty;
+            return true;
+        }
+
+        private string GetUiMarksPath()
+        {
+            return string.IsNullOrWhiteSpace(dataFolder) ? string.Empty : Path.Combine(dataFolder, "_ui_marks.json");
+        }
+
+        private static string GetFrameMarkKey(FrameRecord record)
+        {
+            return string.IsNullOrWhiteSpace(record.ImageFile) ? record.GlobalOrder.ToString(CultureInfo.InvariantCulture) : record.ImageFile;
+        }
+
+        private void LoadUiMarks()
+        {
+            var path = GetUiMarksPath();
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
                 return;
             }
 
             try
             {
-                if (!string.IsNullOrWhiteSpace(lastDeleted.BackupImagePath) &&
-                    !string.IsNullOrWhiteSpace(lastDeleted.OriginalImagePath) &&
-                    File.Exists(lastDeleted.BackupImagePath))
+                var root = JsonNode.Parse(File.ReadAllText(path, Encoding.UTF8)) as JsonObject;
+                if (root == null)
                 {
-                    var originalDirectory = Path.GetDirectoryName(lastDeleted.OriginalImagePath);
-                    if (!string.IsNullOrWhiteSpace(originalDirectory))
-                    {
-                        Directory.CreateDirectory(originalDirectory);
-                    }
-
-                    if (File.Exists(lastDeleted.OriginalImagePath))
-                    {
-                        File.Delete(lastDeleted.OriginalImagePath);
-                    }
-
-                    File.Move(lastDeleted.BackupImagePath, lastDeleted.OriginalImagePath);
+                    return;
                 }
 
-                lastDeleted.Record.Deleted = false;
-                RewriteCatalogs();
-                RecalculateAnomaliesIfNeeded();
-                var targetOrder = lastDeleted.Record.GlobalOrder;
-                var targetVisibleIndex = Math.Max(0, lastDeleted.OriginalVisibleIndex);
-                lastDeleted = null;
-                ApplyFilters(targetOrder);
-
-                if (visibleFrames.Count > 0 && lstFrames.SelectedIndex < 0)
+                var deleted = ReadStringSet(root["deleted"] as JsonArray);
+                var edited = ReadStringSet(root["edited"] as JsonArray);
+                var deletedBackups = root["deletedBackups"] as JsonObject;
+                foreach (var record in allFrames)
                 {
-                    lstFrames.SelectedIndex = Math.Min(targetVisibleIndex, visibleFrames.Count - 1);
-                }
+                    var key = GetFrameMarkKey(record);
+                    record.Deleted = deleted.Contains(key);
+                    record.Edited = edited.Contains(key);
+                    if (!record.Deleted)
+                    {
+                        var imagePath = ResolveImagePath(record);
+                        if (!File.Exists(imagePath) && File.Exists(GetDeletedBackupPath(imagePath)))
+                        {
+                            record.Deleted = true;
+                        }
+                    }
+                    record.DeletedBackupPath = deletedBackups != null && deletedBackups.TryGetPropertyValue(key, out var backupNode)
+                        ? backupNode?.GetValue<string>() ?? string.Empty
+                        : string.Empty;
 
-                AppendLog("삭제 취소 완료");
+                    if (record.Deleted && string.IsNullOrWhiteSpace(record.DeletedBackupPath))
+                    {
+                        record.DeletedBackupPath = ResolveDeletedBackupPath(record);
+                    }
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"삭제 취소 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AppendLog("UI 표시 상태 파일을 읽지 못했습니다: " + ex.Message);
+            }
+        }
+
+        private static HashSet<string> ReadStringSet(JsonArray? array)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (array == null)
+            {
+                return result;
+            }
+
+            foreach (var item in array)
+            {
+                var value = item?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    result.Add(value);
+                }
+            }
+
+            return result;
+        }
+
+        private void SaveUiMarks()
+        {
+            var path = GetUiMarksPath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            var deleted = new JsonArray();
+            var deletedBackups = new JsonObject();
+            foreach (var record in allFrames.Where(record => record.Deleted).OrderBy(record => record.GlobalOrder))
+            {
+                var key = GetFrameMarkKey(record);
+                deleted.Add(key);
+                var backupPath = ResolveDeletedBackupPath(record);
+                if (!string.IsNullOrWhiteSpace(backupPath))
+                {
+                    deletedBackups[key] = MakeUiMarkPathValue(backupPath);
+                }
+            }
+
+            var edited = new JsonArray();
+            foreach (var record in allFrames.Where(record => record.Edited).OrderBy(record => record.GlobalOrder))
+            {
+                edited.Add(GetFrameMarkKey(record));
+            }
+
+            var root = new JsonObject
+            {
+                ["deleted"] = deleted,
+                ["deletedBackups"] = deletedBackups,
+                ["edited"] = edited,
+                ["updatedAt"] = DateTime.Now.ToString("O", CultureInfo.InvariantCulture)
+            };
+
+            var tempPath = path + ".tmp";
+            try
+            {
+                File.WriteAllText(tempPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+                ReplaceFileAtomically(tempPath, path);
+            }
+            catch (Exception ex)
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+                AppendLog("UI 표시 상태 저장 실패: " + ex.Message);
             }
         }
 
@@ -940,7 +1471,7 @@ namespace TeamApp
             foreach (var catalogPath in GetCatalogFiles(dataFolder))
             {
                 var rows = allFrames
-                    .Where(record => !record.Deleted && string.Equals(record.CatalogPath, catalogPath, StringComparison.OrdinalIgnoreCase))
+                    .Where(record => string.Equals(record.CatalogPath, catalogPath, StringComparison.OrdinalIgnoreCase))
                     .OrderBy(record => record.OriginalLineNumber)
                     .ThenBy(record => record.GlobalOrder)
                     .ToList();
@@ -1038,9 +1569,11 @@ namespace TeamApp
             var avgThrottle = throttles.Count > 0 ? throttles.Average().ToString("0.###", CultureInfo.InvariantCulture) : "-";
             var anomalyCount = active.Count(record => record.IsAnomaly);
 
-            lblStats.Text = $"전체 {active.Count}개 / 표시 {visibleFrames.Count}개\n" +
-                            $"평균 angle {avgAngle}\n" +
-                            $"평균 throttle {avgThrottle}\n" +
+            var deletedCount = allFrames.Count(record => record.Deleted);
+            var editedCount = allFrames.Count(record => record.Edited);
+            lblStats.Text = $"사용 {active.Count}개 / 표시 {visibleFrames.Count}개\n" +
+                            $"삭제 {deletedCount}개 / 편집 {editedCount}개\n" +
+                            $"평균 angle {avgAngle} / throttle {avgThrottle}\n" +
                             $"이상 주행 {anomalyCount}개";
         }
 
@@ -1477,6 +2010,13 @@ namespace TeamApp
 
             UpdateSelectionLabel();
             picFrame.Invalidate();
+
+            // 이미지 가리기 작업은 드래그 선택 후 마우스를 놓는 즉시 적용합니다.
+            // 기존 버튼 방식도 유지하지만, 수업 시연에서는 선택-적용 흐름이 한 번에 보이도록 처리합니다.
+            if (selectedImageRect.HasValue && selectedImageRect.Value.Width > 1 && selectedImageRect.Value.Height > 1)
+            {
+                ApplyMaskRegionFromSelection(true);
+            }
         }
 
         private void picFrame_Paint(object? sender, PaintEventArgs e)
@@ -1646,36 +2186,65 @@ namespace TeamApp
 
         private void btnMaskRegion_Click(object? sender, EventArgs e)
         {
+            ApplyMaskRegionFromSelection(false);
+        }
+
+        private bool ApplyMaskRegionFromSelection(bool autoApplied)
+        {
             if (!TryGetSelectedBitmapAndRect(out var bitmap, out var rect))
             {
-                return;
+                return false;
             }
 
-            var color = cmbMaskMode.Text switch
+            var targets = GetTargetRecordsForBatch();
+            if (targets.Count == 0)
+            {
+                return false;
+            }
+
+            Color? fixedColor = cmbMaskMode.Text switch
             {
                 "검정" => Color.Black,
                 "흰색" => Color.White,
-                "평균색" => CalculateAverageColor(bitmap, rect),
-                _ => Color.Gray
+                "회색" => Color.Gray,
+                _ => null
             };
 
-            var editedBitmap = (Bitmap)bitmap.Clone();
-            using (var graphics = Graphics.FromImage(editedBitmap))
-            using (var brush = new SolidBrush(color))
+            var success = 0;
+            foreach (var record in targets)
             {
-                graphics.FillRectangle(brush, rect);
+                try
+                {
+                    ApplyMaskToImageFile(ResolveImagePath(record), rect, fixedColor);
+                    record.Edited = true;
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"이미지 가리기 실패: {record.ImageFile} / {ex.Message}");
+                }
             }
 
-            ReplaceFrameImage(editedBitmap);
-            imageDirty = true;
-            UpdateSelectionLabel();
-            AppendLog($"이미지 영역 가리기 적용: {Path.GetFileName(loadedImagePath)} {rect}");
-            SaveCurrentImageEdit(false);
+            SaveUiMarks();
+            var current = CurrentRecord();
+            if (current != null)
+            {
+                LoadImage(current);
+            }
+            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
+            AppendLog($"이미지 영역 가리기 {(autoApplied ? "자동 " : string.Empty)}적용: {success}/{targets.Count}개, 영역={rect}");
+            return success > 0;
         }
 
         private void btnReplaceRegion_Click(object? sender, EventArgs e)
         {
-            if (!TryGetSelectedBitmapAndRect(out var bitmap, out var rect))
+            if (!TryGetSelectedBitmapAndRect(out _, out var rect))
+            {
+                return;
+            }
+
+            var targets = GetTargetRecordsForBatch();
+            if (targets.Count == 0)
             {
                 return;
             }
@@ -1691,25 +2260,120 @@ namespace TeamApp
                 return;
             }
 
+            var success = 0;
+            foreach (var record in targets)
+            {
+                try
+                {
+                    ApplyReplacementToImageFile(ResolveImagePath(record), rect, dlg.FileName);
+                    record.Edited = true;
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"이미지 교체 실패: {record.ImageFile} / {ex.Message}");
+                }
+            }
+
+            SaveUiMarks();
+            var current = CurrentRecord();
+            if (current != null)
+            {
+                LoadImage(current);
+            }
+            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
+            AppendLog($"이미지 영역 교체 적용: {success}/{targets.Count}개 <- {Path.GetFileName(dlg.FileName)}");
+        }
+
+        private void ApplyMaskToImageFile(string imagePath, Rectangle requestedRect, Color? fixedColor)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
+            }
+
+            using var bitmap = LoadBitmapCopy(imagePath);
+            var rect = Rectangle.Intersect(requestedRect, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+            if (rect.Width <= 1 || rect.Height <= 1)
+            {
+                throw new InvalidOperationException("선택 영역이 이미지 범위를 벗어났습니다.");
+            }
+
+            var color = fixedColor ?? CalculateAverageColor(bitmap, rect);
+            BackupImageIfNeeded(imagePath);
+            using (var graphics = Graphics.FromImage(bitmap))
+            using (var brush = new SolidBrush(color))
+            {
+                graphics.FillRectangle(brush, rect);
+            }
+            SaveBitmapAtomically(bitmap, imagePath);
+        }
+
+        private void ApplyReplacementToImageFile(string imagePath, Rectangle requestedRect, string replacementPath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
+            }
+
+            if (string.IsNullOrWhiteSpace(replacementPath) || !File.Exists(replacementPath))
+            {
+                throw new FileNotFoundException("교체 이미지를 찾을 수 없습니다.", replacementPath);
+            }
+
+            using var bitmap = LoadBitmapCopy(imagePath);
+            var rect = Rectangle.Intersect(requestedRect, new Rectangle(0, 0, bitmap.Width, bitmap.Height));
+            if (rect.Width <= 1 || rect.Height <= 1)
+            {
+                throw new InvalidOperationException("선택 영역이 이미지 범위를 벗어났습니다.");
+            }
+
+            BackupImageIfNeeded(imagePath);
+            using var replacement = Image.FromFile(replacementPath);
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.DrawImage(replacement, rect);
+            }
+            SaveBitmapAtomically(bitmap, imagePath);
+        }
+
+        private static Bitmap LoadBitmapCopy(string imagePath)
+        {
+            using var stream = File.OpenRead(imagePath);
+            using var source = Image.FromStream(stream);
+            return new Bitmap(source);
+        }
+
+        private void BackupImageIfNeeded(string imagePath)
+        {
+            var backupPath = GetEditedBackupPath(imagePath);
+            var backupDirectory = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrWhiteSpace(backupDirectory))
+            {
+                Directory.CreateDirectory(backupDirectory);
+            }
+
+            if (!File.Exists(backupPath))
+            {
+                File.Copy(imagePath, backupPath, false);
+            }
+        }
+
+        private void SaveBitmapAtomically(Bitmap bitmap, string imagePath)
+        {
+            var tempPath = imagePath + ".editing.tmp";
             try
             {
-                using var replacement = Image.FromFile(dlg.FileName);
-                var editedBitmap = (Bitmap)bitmap.Clone();
-                using (var graphics = Graphics.FromImage(editedBitmap))
-                {
-                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    graphics.DrawImage(replacement, rect);
-                }
-
-                ReplaceFrameImage(editedBitmap);
-                imageDirty = true;
-                UpdateSelectionLabel();
-                AppendLog($"이미지 영역 교체 적용: {Path.GetFileName(loadedImagePath)} <- {Path.GetFileName(dlg.FileName)}");
-                SaveCurrentImageEdit(false);
+                bitmap.Save(tempPath, GetImageFormat(imagePath));
+                ReplaceFileAtomically(tempPath, imagePath);
             }
-            catch (Exception ex)
+            finally
             {
-                MessageBox.Show($"교체 이미지를 적용하는 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
             }
         }
 
@@ -1767,6 +2431,12 @@ namespace TeamApp
                 }
 
                 imageDirty = false;
+                var currentRecord = CurrentRecord();
+                if (currentRecord != null)
+                {
+                    currentRecord.Edited = true;
+                    SaveUiMarks();
+                }
                 UpdateSelectionLabel();
                 AppendLog($"이미지 편집 저장: {loadedImagePath}");
                 if (showMessage)
@@ -1796,33 +2466,44 @@ namespace TeamApp
 
         private void btnRestoreImage_Click(object? sender, EventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(loadedImagePath))
+            var targets = GetTargetRecordsForBatch();
+            if (targets.Count == 0)
             {
-                MessageBox.Show("복구할 이미지가 없습니다.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("복구할 이미지를 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            var backupPath = GetEditedBackupPath(loadedImagePath);
-            if (!File.Exists(backupPath))
+            var success = 0;
+            foreach (var record in targets)
             {
-                MessageBox.Show("저장된 원본 백업이 없습니다. 이미지 편집 저장 후에만 원본 복구가 가능합니다.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            try
-            {
-                File.Copy(backupPath, loadedImagePath, true);
-                var record = CurrentRecord();
-                if (record != null)
+                var imagePath = ResolveImagePath(record);
+                var backupPath = GetEditedBackupPath(imagePath);
+                if (!File.Exists(backupPath))
                 {
-                    LoadImage(record);
+                    AppendLog("원본 백업 없음: " + record.ImageFile);
+                    continue;
                 }
-                AppendLog($"이미지 원본 복구: {loadedImagePath}");
+
+                try
+                {
+                    File.Copy(backupPath, imagePath, true);
+                    record.Edited = false;
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"이미지 원본 복구 실패: {record.ImageFile} / {ex.Message}");
+                }
             }
-            catch (Exception ex)
+
+            SaveUiMarks();
+            var current = CurrentRecord();
+            if (current != null)
             {
-                MessageBox.Show($"원본 복구 중 오류가 발생했습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                LoadImage(current);
             }
+            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
+            AppendLog($"이미지 원본 복구: {success}/{targets.Count}개");
         }
 
         private void btnClearSelection_Click(object? sender, EventArgs e)
@@ -1884,6 +2565,78 @@ namespace TeamApp
             return Path.Combine(backupRoot, relative);
         }
 
+        private string GetDeletedBackupPath(string imagePath)
+        {
+            var backupRoot = string.IsNullOrWhiteSpace(dataFolder)
+                ? Path.Combine(Path.GetDirectoryName(imagePath) ?? string.Empty, "_deleted_backup")
+                : Path.Combine(dataFolder, "_deleted_backup");
+
+            string relative;
+            try
+            {
+                relative = !string.IsNullOrWhiteSpace(dataFolder)
+                    ? Path.GetRelativePath(dataFolder, imagePath)
+                    : Path.GetFileName(imagePath);
+            }
+            catch
+            {
+                relative = Path.GetFileName(imagePath);
+            }
+
+            if (relative.StartsWith("..", StringComparison.Ordinal))
+            {
+                relative = Path.GetFileName(imagePath);
+            }
+
+            return Path.Combine(backupRoot, relative);
+        }
+
+
+        private string ResolveDeletedBackupPath(FrameRecord record)
+        {
+            if (!string.IsNullOrWhiteSpace(record.DeletedBackupPath))
+            {
+                var saved = record.DeletedBackupPath.Trim();
+                if (Path.IsPathRooted(saved))
+                {
+                    return saved;
+                }
+
+                return Path.Combine(dataFolder, saved);
+            }
+
+            var originalPath = ResolveOriginalImagePath(record);
+            if (string.IsNullOrWhiteSpace(originalPath))
+            {
+                return string.Empty;
+            }
+
+            return GetDeletedBackupPath(originalPath);
+        }
+
+        private string MakeUiMarkPathValue(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(dataFolder))
+            {
+                return path;
+            }
+
+            try
+            {
+                var relative = Path.GetRelativePath(dataFolder, path);
+                if (!relative.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(relative))
+                {
+                    return relative;
+                }
+            }
+            catch
+            {
+                // 상대 경로 변환 실패 시 절대 경로를 저장한다.
+            }
+
+            return path;
+        }
+
         private static void ReplaceFileAtomically(string sourcePath, string destinationPath)
         {
             var directory = Path.GetDirectoryName(destinationPath);
@@ -1908,6 +2661,448 @@ namespace TeamApp
             };
         }
 
+        private void RefreshTrainingPathDefaults(bool overwriteExisting)
+        {
+            if (string.IsNullOrWhiteSpace(dataFolder))
+            {
+                return;
+            }
+
+            if (overwriteExisting || string.IsNullOrWhiteSpace(trainingDataPathOverride))
+            {
+                trainingDataPathOverride = dataFolder;
+            }
+
+            if (overwriteExisting || string.IsNullOrWhiteSpace(trainingModelPathOverride))
+            {
+                var modelRoot = string.IsNullOrWhiteSpace(rootFolder) ? dataFolder : rootFolder;
+                trainingModelPathOverride = Path.Combine(modelRoot, "models", "mypilot.h5");
+            }
+        }
+
+        private string GetTrainingDataPath()
+        {
+            return string.IsNullOrWhiteSpace(trainingDataPathOverride) ? dataFolder : trainingDataPathOverride.Trim();
+        }
+
+        private string GetTrainingModelPath()
+        {
+            if (!string.IsNullOrWhiteSpace(trainingModelPathOverride))
+            {
+                return trainingModelPathOverride.Trim();
+            }
+
+            var modelRoot = string.IsNullOrWhiteSpace(rootFolder) ? dataFolder : rootFolder;
+            return Path.Combine(modelRoot, "models", "mypilot.h5");
+        }
+
+        private void EnsureLocalModelDirectory(string modelPath)
+        {
+            if (string.IsNullOrWhiteSpace(modelPath) || IsLikelyRemoteOrUnixPath(modelPath))
+            {
+                return;
+            }
+
+            var directory = Path.GetDirectoryName(modelPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+        }
+
+        private static bool IsLikelyRemoteOrUnixPath(string path)
+        {
+            var value = path.Trim();
+            if (value.StartsWith("/", StringComparison.Ordinal) ||
+                value.StartsWith("~", StringComparison.Ordinal) ||
+                value.Contains(":/", StringComparison.Ordinal) ||
+                value.Contains("@", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+
+        internal string TrainingRootFolder => rootFolder;
+        internal string TrainingDataFolder => dataFolder;
+        internal string TrainingImagesFolder => imagesFolder;
+
+        internal string GetTrainingDataPathForDialog()
+        {
+            return GetTrainingDataPath();
+        }
+
+        internal string GetTrainingModelPathForDialog()
+        {
+            return GetTrainingModelPath();
+        }
+
+        internal void RefreshTrainingPathDefaultsForDialog(bool overwriteExisting)
+        {
+            RefreshTrainingPathDefaults(overwriteExisting);
+        }
+
+        internal void SetTrainingOverridesFromDialog(string dataPath, string modelPath)
+        {
+            trainingDataPathOverride = dataPath ?? string.Empty;
+            trainingModelPathOverride = modelPath ?? string.Empty;
+        }
+
+        internal void StoreGeneratedTrainingCommand(string command, bool interactiveSshPassword)
+        {
+            trainingCommandGenerated = true;
+            trainingUseSshPasswordInput = interactiveSshPassword;
+            trainingSshPassword = string.Empty;
+            txtTrainCommand.Text = command;
+            UpdateTrainingCommandEditState();
+        }
+
+        internal void AppendTrainingLog(string text)
+        {
+            AppendLog(text);
+        }
+
+        internal string ConvertVirtualBoxPathForDialog(string path)
+        {
+            return ConvertWindowsSharedFolderPathToVirtualBoxPath(path);
+        }
+
+        internal string CreateTrainingDatasetForDialog(int datasetModeIndex, bool excludeAnomalyFromSelection, string modeName)
+        {
+            if ((datasetModeIndex == 1 || (datasetModeIndex == 2 && excludeAnomalyFromSelection)) &&
+                !allFrames.Any(record => record.IsAnomaly || record.MovingAverage.HasValue || record.Volatility.HasValue))
+            {
+                DetectAnomalies(false);
+            }
+
+            List<FrameRecord> records = datasetModeIndex switch
+            {
+                1 => allFrames.Where(record => !record.Deleted && !record.IsAnomaly).ToList(),
+                2 => visibleFrames.Where(record => !record.Deleted).ToList(),
+                _ => allFrames.Where(record => !record.Deleted).ToList()
+            };
+
+            if (datasetModeIndex == 2 && excludeAnomalyFromSelection)
+            {
+                records = records.Where(record => !record.IsAnomaly).ToList();
+            }
+
+            records = records.OrderBy(record => record.GlobalOrder).ToList();
+            if (records.Count == 0)
+            {
+                throw new InvalidOperationException("학습 데이터셋으로 내보낼 프레임이 없습니다.");
+            }
+
+            return CreateTrainingDataset(records, modeName);
+        }
+
+        internal bool TryMapTrainingPathToLocalFile(string trainingPath, out string localPath)
+        {
+            localPath = string.Empty;
+            if (string.IsNullOrWhiteSpace(trainingPath))
+            {
+                return false;
+            }
+
+            var value = trainingPath.Trim().Trim('"');
+            if (!IsLikelyRemoteOrUnixPath(value))
+            {
+                localPath = value;
+                return true;
+            }
+
+            if (TryConvertWslPathToWindows(value, out var windowsPath))
+            {
+                localPath = windowsPath;
+                return true;
+            }
+
+            var vboxRoot = ConvertWindowsSharedFolderPathToVirtualBoxPath(rootFolder).Replace('\\', '/').TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(vboxRoot) && value.Replace('\\', '/').StartsWith(vboxRoot + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = value.Replace('\\', '/').Substring(vboxRoot.Length).TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                localPath = Path.Combine(rootFolder, relative);
+                return true;
+            }
+
+            var vboxData = ConvertWindowsSharedFolderPathToVirtualBoxPath(dataFolder).Replace('\\', '/').TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(vboxData) && value.Replace('\\', '/').StartsWith(vboxData + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = value.Replace('\\', '/').Substring(vboxData.Length).TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                localPath = Path.Combine(dataFolder, relative);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryConvertWslPathToWindows(string path, out string windowsPath)
+        {
+            windowsPath = string.Empty;
+            var value = path.Replace('\\', '/');
+            if (!value.StartsWith("/mnt/", StringComparison.OrdinalIgnoreCase) || value.Length < 7)
+            {
+                return false;
+            }
+
+            var drive = value[5];
+            if (!char.IsLetter(drive) || value[6] != '/')
+            {
+                return false;
+            }
+
+            var rest = value.Substring(7).Replace('/', Path.DirectorySeparatorChar);
+            windowsPath = char.ToUpperInvariant(drive) + ":" + Path.DirectorySeparatorChar + rest;
+            return true;
+        }
+
+        private void btnTrainingPaths_Click(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(dataFolder) || !Directory.Exists(dataFolder))
+            {
+                MessageBox.Show("먼저 DonkeyCar 데이터를 불러오세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            RefreshTrainingPathDefaults(false);
+            using var dialog = new Form2(this);
+            dialog.ShowDialog(this);
+        }
+
+        internal string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir, string sshPassword)
+        {
+            var extra = string.IsNullOrWhiteSpace(extraArgs) ? string.Empty : " " + extraArgs.Trim();
+            if (environment == "wsl")
+            {
+                var bashData = ConvertPathForEnvironment(dataPath, "wsl");
+                var bashModel = ConvertPathForEnvironment(modelPath, "wsl");
+                var body = BuildBashTrainBody(activateCommand, ConvertPathForEnvironment(rootFolder, "wsl"), bashData, bashModel, extraArgs);
+                return "wsl bash -lc \"" + body.Replace("\"", "\\\"") + "\"";
+            }
+
+            if (environment == "virtualbox")
+            {
+                var vboxData = ConvertPathForEnvironment(dataPath, "virtualbox");
+                var vboxModel = ConvertPathForEnvironment(modelPath, "virtualbox");
+                var work = string.IsNullOrWhiteSpace(remoteWorkDir) ? string.Empty : ConvertPathForEnvironment(remoteWorkDir, "virtualbox");
+                var body = BuildBashTrainBody(activateCommand, work, vboxData, vboxModel, extraArgs);
+                var userHost = string.IsNullOrWhiteSpace(sshUser) ? sshHost : sshUser + "@" + sshHost;
+                var portPart = string.IsNullOrWhiteSpace(sshPort) ? string.Empty : "-p " + sshPort.Trim() + " ";
+                if (!string.IsNullOrWhiteSpace(sshPassword))
+                {
+                    var sshPasswordOptions = "-T -o PreferredAuthentications=password -o PubkeyAuthentication=no -o NumberOfPasswordPrompts=1 -o ConnectionAttempts=1 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=2 ";
+                    return "ssh " + sshPasswordOptions + portPart + userHost + " \"" + body.Replace("\"", "\\\"") + "\"";
+                }
+
+                var sshOptions = "-T -o BatchMode=yes -o NumberOfPasswordPrompts=0 -o ConnectionAttempts=1 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=2 ";
+                return "ssh " + sshOptions + portPart + userHost + " \"" + body.Replace("\"", "\\\"") + "\"";
+            }
+
+            return "python train.py --tub \"" + dataPath + "\" --model \"" + modelPath + "\"" + extra;
+        }
+
+        private static string BuildBashTrainBody(string activateCommand, string workDir, string dataPath, string modelPath, string extraArgs)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(activateCommand))
+            {
+                parts.Add(activateCommand.Trim());
+            }
+            if (!string.IsNullOrWhiteSpace(workDir))
+            {
+                parts.Add("cd '" + EscapeBashSingleQuoted(workDir) + "'");
+            }
+
+            var command = "python train.py --tub '" + EscapeBashSingleQuoted(dataPath) + "' --model '" + EscapeBashSingleQuoted(modelPath) + "'";
+            if (!string.IsNullOrWhiteSpace(extraArgs))
+            {
+                command += " " + extraArgs.Trim();
+            }
+            parts.Add(command);
+            return string.Join(" && ", parts);
+        }
+
+        internal string ConvertPathForEnvironment(string path, string environment)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            if (environment == "wsl")
+            {
+                return TryConvertWindowsPathToWsl(path, out var wslPath) ? wslPath : path.Replace('\\', '/');
+            }
+
+            if (environment == "virtualbox")
+            {
+                return ConvertWindowsSharedFolderPathToVirtualBoxPath(path);
+            }
+
+            return path;
+        }
+
+        private string CreateTrainingDataset(IReadOnlyList<FrameRecord> records, string modeName)
+        {
+            var safeMode = Regex.Replace(modeName, @"[^A-Za-z0-9가-힣_\-]+", "_").Trim('_');
+            if (string.IsNullOrWhiteSpace(safeMode))
+            {
+                safeMode = "training";
+            }
+
+            var exportRoot = Path.Combine(dataFolder, "_training_sets", safeMode + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture));
+            var exportImages = Path.Combine(exportRoot, "images");
+            Directory.CreateDirectory(exportImages);
+
+            var catalogPath = Path.Combine(exportRoot, "catalog_0.catalog");
+            using var writer = new StreamWriter(catalogPath, false, Encoding.UTF8);
+            var count = 0;
+            foreach (var record in records)
+            {
+                var sourceImage = ResolveImagePath(record);
+                if (!File.Exists(sourceImage))
+                {
+                    AppendLog("학습 데이터 이미지 누락: " + record.ImageFile);
+                    continue;
+                }
+
+                var extension = Path.GetExtension(sourceImage);
+                if (string.IsNullOrWhiteSpace(extension))
+                {
+                    extension = ".jpg";
+                }
+                var exportedFileName = count.ToString("000000", CultureInfo.InvariantCulture) + "_" + Path.GetFileNameWithoutExtension(sourceImage) + extension;
+                var relativeImage = Path.Combine("images", exportedFileName).Replace('\\', '/');
+                File.Copy(sourceImage, Path.Combine(exportImages, exportedFileName), true);
+                writer.WriteLine(BuildCatalogJsonForExport(record, relativeImage, count));
+                count++;
+            }
+
+            if (count == 0)
+            {
+                throw new InvalidOperationException("학습 데이터셋에 복사할 수 있는 이미지가 없습니다.");
+            }
+
+            AppendLog($"학습 데이터셋 생성: {count}개 -> {exportRoot}");
+            return exportRoot;
+        }
+
+        private static string BuildCatalogJsonForExport(FrameRecord record, string relativeImage, int newIndex)
+        {
+            JsonObject json;
+            try
+            {
+                json = JsonNode.Parse(record.RawJson) as JsonObject ?? new JsonObject();
+            }
+            catch
+            {
+                json = new JsonObject();
+            }
+
+            json["_index"] = newIndex;
+            json["cam/image_array"] = relativeImage;
+            if (record.Angle.HasValue)
+            {
+                json["user/angle"] = record.Angle.Value;
+            }
+            if (record.Throttle.HasValue)
+            {
+                json["user/throttle"] = record.Throttle.Value;
+            }
+            if (!string.IsNullOrWhiteSpace(record.Mode))
+            {
+                json["user/mode"] = record.Mode;
+            }
+            return json.ToJsonString(JsonOptions);
+        }
+
+        internal static string ConvertWindowsSharedFolderPathToVirtualBoxPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return path;
+            }
+
+            var value = path.Trim();
+            if (value.StartsWith("/", StringComparison.Ordinal))
+            {
+                return value.Replace('\\', '/');
+            }
+
+            var parts = value.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var part = parts[i];
+                if (part.Contains("virtualbox_share", StringComparison.OrdinalIgnoreCase) ||
+                    part.Contains("vbox", StringComparison.OrdinalIgnoreCase) ||
+                    part.Contains("share", StringComparison.OrdinalIgnoreCase))
+                {
+                    var remainder = string.Join('/', parts.Skip(i + 1));
+                    var basePath = "/media/sf_" + part;
+                    return string.IsNullOrWhiteSpace(remainder) ? basePath : basePath + "/" + remainder;
+                }
+            }
+
+            return value.Replace('\\', '/');
+        }
+
+        private void ResetTrainingCommandState()
+        {
+            trainingUseSshPasswordInput = false;
+            trainingSshPassword = string.Empty;
+            trainingCommandGenerated = false;
+            if (!chkManualCommandEdit.Checked)
+            {
+                txtTrainCommand.Text = TrainingCommandPlaceholder;
+            }
+            UpdateTrainingCommandEditState();
+        }
+
+        private void chkManualCommandEdit_CheckedChanged(object? sender, EventArgs e)
+        {
+            UpdateTrainingCommandEditState();
+        }
+
+        private void UpdateTrainingCommandEditState()
+        {
+            txtTrainCommand.ReadOnly = !chkManualCommandEdit.Checked;
+            txtTrainCommand.BackColor = chkManualCommandEdit.Checked ? Color.White : SystemColors.Control;
+            if (chkManualCommandEdit.Checked)
+            {
+                if (!trainingCommandGenerated && IsTrainingCommandPlaceholder(txtTrainCommand.Text.Trim()))
+                {
+                    txtTrainCommand.Text = "donkey train --tub \"{DATA_FOLDER}\" --model \"{MODEL_PATH}\"";
+                }
+                lblHint.Text = "수동 편집 모드입니다. 직접 입력한 명령을 실행합니다.";
+            }
+            else
+            {
+                if (!trainingCommandGenerated)
+                {
+                    txtTrainCommand.Text = TrainingCommandPlaceholder;
+                }
+                lblHint.Text = "먼저 학습 명령 생성으로 환경/경로를 설정하세요. 수동 편집 체크 시에만 명령 수정 가능.";
+            }
+        }
+
+        private static bool IsTrainingCommandPlaceholder(string command)
+        {
+            return string.IsNullOrWhiteSpace(command) ||
+                   string.Equals(command, TrainingCommandPlaceholder, StringComparison.Ordinal) ||
+                   command.StartsWith("먼저 [학습 명령 생성]", StringComparison.Ordinal);
+        }
+
+        private static bool IsSshCommand(string command)
+        {
+            var trimmed = command.TrimStart();
+            return trimmed.Equals("ssh", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("ssh.exe ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("\"ssh.exe\" ", StringComparison.OrdinalIgnoreCase);
+        }
+
         private async void btnTrain_Click(object? sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(dataFolder) || !Directory.Exists(dataFolder))
@@ -1917,28 +3112,56 @@ namespace TeamApp
             }
 
             var command = txtTrainCommand.Text.Trim();
-            if (string.IsNullOrWhiteSpace(command))
+            if (!trainingCommandGenerated && !chkManualCommandEdit.Checked)
             {
-                MessageBox.Show("실행할 학습 명령을 입력하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("먼저 [학습 명령 생성]을 눌러 학습 범위와 실행 환경을 선택하세요. 직접 입력하려면 [수동 편집]을 체크하세요.", "학습 명령 필요", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                btnTrainingPaths.PerformClick();
                 return;
             }
 
+            if (IsTrainingCommandPlaceholder(command))
+            {
+                MessageBox.Show("실행할 학습 명령이 아직 생성되지 않았습니다. [학습 명령 생성]을 누르거나 [수동 편집]을 체크한 뒤 명령을 직접 입력하세요.", "학습 명령 필요", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var trainingDataPath = GetTrainingDataPath();
+            var trainingModelPath = GetTrainingModelPath();
+
             command = command
                 .Replace("{ROOT_FOLDER}", rootFolder)
-                .Replace("{DATA_FOLDER}", dataFolder)
+                .Replace("{DATA_FOLDER}", trainingDataPath)
                 .Replace("{IMAGES_FOLDER}", imagesFolder)
+                .Replace("{MODEL_PATH}", trainingModelPath)
                 .Replace("{ROOT}", rootFolder)
-                .Replace("{DATA}", dataFolder)
-                .Replace("{IMAGES}", imagesFolder);
+                .Replace("{DATA}", trainingDataPath)
+                .Replace("{IMAGES}", imagesFolder)
+                .Replace("{MODEL}", trainingModelPath);
 
             btnTrain.Enabled = false;
 
             try
             {
-                Directory.CreateDirectory(Path.Combine(rootFolder, "models"));
+                EnsureLocalModelDirectory(trainingModelPath);
                 var preparedCommand = PrepareTrainingCommand(command);
-                AppendLog("> " + preparedCommand);
-                var exitCode = await RunCommandAsync(preparedCommand);
+                var shouldUseInteractiveSshPassword = StartsWithSshCommand(preparedCommand) &&
+                    (trainingUseSshPasswordInput || ContainsSshPasswordBlockingOptions(preparedCommand));
+                if (shouldUseInteractiveSshPassword)
+                {
+                    preparedCommand = EnableOpenSshPasswordPrompt(preparedCommand);
+                    AppendLog("> " + MaskSensitiveCommand(preparedCommand));
+                    AppendLog("SSH 비밀번호 입력형 실행: 열린 콘솔 창에서 VM 비밀번호를 입력하세요. 입력값은 WinForms에 저장되지 않습니다.");
+                    var interactiveExitCode = await RunInteractiveConsoleCommandAsync(preparedCommand);
+                    AppendLog($"프로세스 종료 코드: {interactiveExitCode}");
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(trainingSshPassword))
+                {
+                    preparedCommand = EnableOpenSshPasswordPrompt(preparedCommand);
+                }
+                AppendLog("> " + MaskSensitiveCommand(preparedCommand));
+                var exitCode = await RunCommandAsync(preparedCommand, string.IsNullOrWhiteSpace(trainingSshPassword) ? null : trainingSshPassword);
                 AppendLog($"프로세스 종료 코드: {exitCode}");
             }
             catch (Exception ex)
@@ -1950,6 +3173,139 @@ namespace TeamApp
             {
                 btnTrain.Enabled = true;
             }
+        }
+
+        internal static string EnableOpenSshPasswordPrompt(string command)
+        {
+            var trimmed = command.TrimStart();
+            if (!trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase))
+            {
+                return command;
+            }
+
+            // SSH_ASKPASS cannot work when BatchMode disables every password prompt.
+            // Older generated commands may still contain those options, so strip them just before execution.
+            var normalized = Regex.Replace(command, @"(?i)\s+-o\s+BatchMode\s*=\s*yes", string.Empty);
+            normalized = Regex.Replace(normalized, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*=\s*0", string.Empty);
+
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o NumberOfPasswordPrompts=1 ", RegexOptions.CultureInvariant);
+            }
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+PreferredAuthentications\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o PreferredAuthentications=password ", RegexOptions.CultureInvariant);
+            }
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+PubkeyAuthentication\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o PubkeyAuthentication=no ", RegexOptions.CultureInvariant);
+            }
+            if (!Regex.IsMatch(normalized, @"(?i)\s+-o\s+KbdInteractiveAuthentication\s*="))
+            {
+                normalized = Regex.Replace(normalized, @"(?i)^\s*ssh\s+", "ssh -o KbdInteractiveAuthentication=no ", RegexOptions.CultureInvariant);
+            }
+
+            return normalized;
+        }
+
+        private static bool StartsWithSshCommand(string command)
+        {
+            var trimmed = command.TrimStart();
+            return trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("ssh.exe ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("ssh", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Equals("ssh.exe", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsSshPasswordBlockingOptions(string command)
+        {
+            return Regex.IsMatch(command, @"(?i)\s+-o\s+BatchMode\s*=\s*yes") ||
+                   Regex.IsMatch(command, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*=\s*0");
+        }
+
+        internal Task<int> RunInteractiveConsoleCommandAsync(string command)
+        {
+            var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
+            var shell = Environment.GetEnvironmentVariable("ComSpec");
+            if (string.IsNullOrWhiteSpace(shell))
+            {
+                shell = "cmd.exe";
+            }
+
+            var commandWithExit = command + " & set TEAMAPP_EXIT=!ERRORLEVEL! & echo. & echo [TeamApp] Process exit code: !TEAMAPP_EXIT! & echo [TeamApp] Press any key to return to the UI... & pause > nul & exit /b !TEAMAPP_EXIT!";
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = shell,
+                Arguments = "/D /V:ON /S /C " + commandWithExit,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Normal
+            };
+
+            return RunExternalProcessAsync(startInfo);
+        }
+
+        private static Task<int> RunExternalProcessAsync(ProcessStartInfo startInfo)
+        {
+            var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            try
+            {
+                var process = new Process
+                {
+                    StartInfo = startInfo,
+                    EnableRaisingEvents = true
+                };
+
+                process.Exited += (_, _) =>
+                {
+                    try
+                    {
+                        completion.TrySetResult(process.ExitCode);
+                    }
+                    catch (Exception ex)
+                    {
+                        completion.TrySetException(ex);
+                    }
+                    finally
+                    {
+                        process.Dispose();
+                    }
+                };
+
+                if (!process.Start())
+                {
+                    process.Dispose();
+                    completion.TrySetException(new InvalidOperationException("프로세스를 시작하지 못했습니다."));
+                }
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+
+            return completion.Task;
+        }
+
+        private string ResolveCommandSecrets(string command)
+        {
+            if (command.Contains(SshPasswordPlaceholder, StringComparison.Ordinal))
+            {
+                if (string.IsNullOrWhiteSpace(trainingSshPassword))
+                {
+                    throw new InvalidOperationException("SSH 비밀번호 자동입력이 켜져 있지만 비밀번호가 비어 있습니다. 학습 명령 생성을 다시 열어 비밀번호를 입력하거나 SSH 키 로그인을 사용하세요.");
+                }
+
+                return command.Replace(SshPasswordPlaceholder, trainingSshPassword);
+            }
+
+            return command;
+        }
+
+        internal static string MaskSensitiveCommand(string command)
+        {
+            var masked = command.Replace(SshPasswordPlaceholder, "********");
+            return Regex.Replace(masked, "(?i)(-pw\\s+)(\"[^\"]*\"|\\S+)", "$1********");
         }
 
         private string PrepareTrainingCommand(string command)
@@ -2318,21 +3674,67 @@ namespace TeamApp
 
         private static bool RequiresShell(string command)
         {
-            return command.Contains("&&", StringComparison.Ordinal) ||
-                   command.Contains("||", StringComparison.Ordinal) ||
-                   command.Contains("|", StringComparison.Ordinal) ||
-                   command.Contains(">", StringComparison.Ordinal) ||
-                   command.Contains("<", StringComparison.Ordinal) ||
-                   command.TrimStart().StartsWith("call ", StringComparison.OrdinalIgnoreCase) ||
-                   command.TrimStart().StartsWith("set ", StringComparison.OrdinalIgnoreCase);
+            var trimmed = command.TrimStart();
+            return ContainsShellOperatorOutsideQuotes(command) ||
+                   trimmed.StartsWith("call ", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.StartsWith("set ", StringComparison.OrdinalIgnoreCase);
         }
 
-        private Task<int> RunCommandAsync(string command)
+        private static bool ContainsShellOperatorOutsideQuotes(string command)
+        {
+            var inDoubleQuote = false;
+            var inSingleQuote = false;
+            for (var i = 0; i < command.Length; i++)
+            {
+                var ch = command[i];
+                if (ch == '"' && !inSingleQuote)
+                {
+                    inDoubleQuote = !inDoubleQuote;
+                    continue;
+                }
+
+                if (ch == '\'' && !inDoubleQuote)
+                {
+                    inSingleQuote = !inSingleQuote;
+                    continue;
+                }
+
+                if (inDoubleQuote || inSingleQuote)
+                {
+                    continue;
+                }
+
+                if (ch == '>' || ch == '<')
+                {
+                    return true;
+                }
+
+                if ((ch == '&' || ch == '|' ) && i + 1 < command.Length && command[i + 1] == ch)
+                {
+                    return true;
+                }
+
+                if (ch == '|')
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private Task<int> RunCommandAsync(string command, string? sshPassword = null)
         {
             var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
             if (!RequiresShell(command) && TryCreateDirectProcessStartInfo(command, workingDirectory, out var directStartInfo))
             {
-                return RunProcessAsync(directStartInfo);
+                ApplySshAskPassIfNeeded(directStartInfo, sshPassword);
+                var isPasswordSsh = !string.IsNullOrWhiteSpace(sshPassword) && IsSshCommand(command);
+                if (isPasswordSsh)
+                {
+                    directStartInfo.RedirectStandardInput = true;
+                }
+                return RunProcessAsync(directStartInfo, isPasswordSsh ? sshPassword : null, isPasswordSsh);
             }
 
             var shell = Environment.GetEnvironmentVariable("ComSpec");
@@ -2351,8 +3753,42 @@ namespace TeamApp
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
+            ApplySshAskPassIfNeeded(shellStartInfo, sshPassword);
+            var shellPasswordSsh = !string.IsNullOrWhiteSpace(sshPassword) && IsSshCommand(command);
+            if (shellPasswordSsh)
+            {
+                shellStartInfo.RedirectStandardInput = true;
+            }
 
-            return RunProcessAsync(shellStartInfo);
+            return RunProcessAsync(shellStartInfo, shellPasswordSsh ? sshPassword : null, shellPasswordSsh);
+        }
+
+        private void ApplySshAskPassIfNeeded(ProcessStartInfo startInfo, string? sshPassword)
+        {
+            if (string.IsNullOrWhiteSpace(sshPassword))
+            {
+                return;
+            }
+
+            var askPassDir = Path.Combine(Path.GetTempPath(), "TeamAppSshAskPass");
+            Directory.CreateDirectory(askPassDir);
+            var scriptFile = Path.Combine(askPassDir, "askpass.ps1");
+            var cmdFile = Path.Combine(askPassDir, "askpass.cmd");
+
+            File.WriteAllText(scriptFile,
+                "$p = [Environment]::GetEnvironmentVariable('TEAMAPP_SSH_PASSWORD')\r\n" +
+                "[Console]::Out.Write($p)",
+                new UTF8Encoding(false));
+            File.WriteAllText(cmdFile,
+                "@echo off\r\n" +
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"" + scriptFile + "\"\r\n",
+                new UTF8Encoding(false));
+
+            startInfo.Environment["TEAMAPP_SSH_PASSWORD"] = sshPassword;
+            startInfo.Environment["SSH_ASKPASS"] = cmdFile;
+            startInfo.Environment["SSH_ASKPASS_REQUIRE"] = "force";
+            startInfo.Environment["DISPLAY"] = "teamapp:0";
+            startInfo.Environment["MSYS2_ARG_CONV_EXCL"] = "*";
         }
 
         private static bool TryCreateDirectProcessStartInfo(string command, string workingDirectory, out ProcessStartInfo startInfo)
@@ -2426,7 +3862,7 @@ namespace TeamApp
             return tokens;
         }
 
-        private async Task<int> RunProcessAsync(ProcessStartInfo startInfo)
+        private async Task<int> RunProcessAsync(ProcessStartInfo startInfo, string? stdinPassword = null, bool enableSshAuthTimeout = false)
         {
             using var process = new Process
             {
@@ -2446,19 +3882,77 @@ namespace TeamApp
                 throw;
             }
 
-            var outputTask = Task.Run(() => ReadProcessStream(process.StandardOutput, false));
-            var errorTask = Task.Run(() => ReadProcessStream(process.StandardError, true));
+            var lastOutputUtc = DateTime.UtcNow;
+            var outputTask = Task.Run(() => ReadProcessStream(process.StandardOutput, false, () => lastOutputUtc = DateTime.UtcNow));
+            var errorTask = Task.Run(() => ReadProcessStream(process.StandardError, true, () => lastOutputUtc = DateTime.UtcNow));
 
-            await Task.Run(() => process.WaitForExit()).ConfigureAwait(false);
+            Task? passwordFallbackTask = null;
+            if (!string.IsNullOrWhiteSpace(stdinPassword) && startInfo.RedirectStandardInput)
+            {
+                passwordFallbackTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(900).ConfigureAwait(false);
+                        if (!process.HasExited)
+                        {
+                            process.StandardInput.WriteLine(stdinPassword);
+                            process.StandardInput.Flush();
+                        }
+                    }
+                    catch
+                    {
+                        // OpenSSH가 stdin 비밀번호 입력을 지원하지 않는 경우가 있어도 AskPass가 우선 처리하므로 무시한다.
+                    }
+                });
+            }
+
+            var exitTask = Task.Run(() => process.WaitForExit());
+            if (enableSshAuthTimeout)
+            {
+                while (!exitTask.IsCompleted)
+                {
+                    var completed = await Task.WhenAny(exitTask, Task.Delay(5000)).ConfigureAwait(false);
+                    if (completed == exitTask)
+                    {
+                        break;
+                    }
+
+                    var idleSeconds = (DateTime.UtcNow - lastOutputUtc).TotalSeconds;
+                    if (idleSeconds >= 60)
+                    {
+                        try
+                        {
+                            process.Kill(true);
+                        }
+                        catch
+                        {
+                            // 이미 종료된 경우 무시한다.
+                        }
+
+                        throw new InvalidOperationException("SSH 비밀번호 입력 대기 또는 인증 지연으로 보이는 상태가 60초 이상 지속되어 실행을 중단했습니다. 학습 명령 생성 창에서 SSH 비밀번호와 자동입력을 확인하거나 PowerShell에서 ssh 접속이 되는지 먼저 확인하세요.");
+                    }
+                }
+            }
+            else
+            {
+                await exitTask.ConfigureAwait(false);
+            }
+
+            if (passwordFallbackTask != null)
+            {
+                await Task.WhenAny(passwordFallbackTask, Task.Delay(1000)).ConfigureAwait(false);
+            }
             await Task.WhenAll(outputTask, errorTask).ConfigureAwait(false);
             return process.ExitCode;
         }
 
-        private void ReadProcessStream(StreamReader reader, bool isError)
+        private void ReadProcessStream(StreamReader reader, bool isError, Action? markActivity = null)
         {
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
+                markActivity?.Invoke();
                 if (string.IsNullOrWhiteSpace(line))
                 {
                     continue;
@@ -2562,8 +4056,13 @@ namespace TeamApp
 
         private static string ToListText(FrameRecord record)
         {
-            var anomaly = record.IsAnomaly ? "!" : " ";
-            return $"{anomaly} {record.Index,5} | a={FormatCompact(record.Angle),7} | t={FormatCompact(record.Throttle),7}";
+            var flags = string.Empty;
+            if (record.Deleted) flags += "삭제 ";
+            if (record.Edited) flags += "편집 ";
+            if (record.IsAnomaly) flags += "이상 ";
+            if (string.IsNullOrWhiteSpace(flags)) flags = "정상 ";
+            var fileName = Path.GetFileName(record.ImageFile);
+            return $"{flags.Trim(),-6} | {record.Index,5} | a={FormatCompact(record.Angle),7} | t={FormatCompact(record.Throttle),7} | {fileName}";
         }
 
         private static string FormatCompact(double? value)
@@ -2595,18 +4094,136 @@ namespace TeamApp
             public double? Throttle { get; set; }
             public string Mode { get; set; } = string.Empty;
             public bool Deleted { get; set; }
+            public string DeletedBackupPath { get; set; } = string.Empty;
+            public bool Edited { get; set; }
             public bool IsAnomaly { get; set; }
             public double? MovingAverage { get; set; }
             public double? Volatility { get; set; }
             public double AnomalyScore { get; set; }
         }
+    }
 
-        private sealed class DeletedRecord
+    internal readonly struct FrameListVisualState
+    {
+        public static readonly FrameListVisualState Normal = new FrameListVisualState(false, false, false);
+
+        public FrameListVisualState(bool deleted, bool edited, bool anomaly)
         {
-            public FrameRecord Record { get; set; } = null!;
-            public int OriginalVisibleIndex { get; set; }
-            public string? OriginalImagePath { get; set; }
-            public string? BackupImagePath { get; set; }
+            Deleted = deleted;
+            Edited = edited;
+            Anomaly = anomaly;
+        }
+
+        public bool Deleted { get; }
+        public bool Edited { get; }
+        public bool Anomaly { get; }
+    }
+
+    internal sealed class ColoredCheckedListBox : CheckedListBox
+    {
+        public ColoredCheckedListBox()
+        {
+            DrawMode = DrawMode.OwnerDrawFixed;
+            CheckOnClick = false;
+        }
+
+        public Func<int, FrameListVisualState>? ResolveVisualState { get; set; }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            var index = IndexFromPoint(e.Location);
+            if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
+            {
+                SelectedIndex = index;
+                SetItemChecked(index, !GetItemChecked(index));
+                Invalidate(GetItemRectangle(index));
+                return;
+            }
+
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseDoubleClick(MouseEventArgs e)
+        {
+            var index = IndexFromPoint(e.Location);
+            if (index >= 0 && index < Items.Count && !IsPointInsideCheckBox(index, e.Location))
+            {
+                SelectedIndex = index;
+                return;
+            }
+
+            base.OnMouseDoubleClick(e);
+        }
+
+        private bool IsPointInsideCheckBox(int index, Point point)
+        {
+            if (index < 0 || index >= Items.Count)
+            {
+                return false;
+            }
+
+            var itemBounds = GetItemRectangle(index);
+            using var graphics = CreateGraphics();
+            var glyphSize = CheckBoxRenderer.GetGlyphSize(graphics, CheckBoxState.UncheckedNormal);
+            var glyphBounds = new Rectangle(
+                itemBounds.Left + 3,
+                itemBounds.Top + Math.Max(0, (itemBounds.Height - glyphSize.Height) / 2),
+                glyphSize.Width + 6,
+                glyphSize.Height);
+            return glyphBounds.Contains(point);
+        }
+
+        protected override void OnDrawItem(DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= Items.Count)
+            {
+                return;
+            }
+
+            var state = ResolveVisualState?.Invoke(e.Index) ?? FrameListVisualState.Normal;
+            var selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            var backColor = selected ? SystemColors.Highlight : BackColor;
+            var foreColor = selected ? SystemColors.HighlightText : ForeColor;
+
+            if (state.Deleted)
+            {
+                backColor = selected ? Color.Firebrick : Color.LightCoral;
+                foreColor = selected ? Color.White : Color.DarkRed;
+            }
+            else if (state.Edited)
+            {
+                backColor = selected ? Color.SeaGreen : Color.LightGreen;
+                foreColor = selected ? Color.White : Color.DarkGreen;
+            }
+            else if (state.Anomaly && !selected)
+            {
+                foreColor = Color.Red;
+            }
+
+            using (var background = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(background, e.Bounds);
+            }
+
+            var isChecked = GetItemChecked(e.Index);
+            var checkBoxState = isChecked ? CheckBoxState.CheckedNormal : CheckBoxState.UncheckedNormal;
+            var glyphSize = CheckBoxRenderer.GetGlyphSize(e.Graphics, checkBoxState);
+            var glyphLocation = new Point(e.Bounds.Left + 3, e.Bounds.Top + Math.Max(0, (e.Bounds.Height - glyphSize.Height) / 2));
+            CheckBoxRenderer.DrawCheckBox(e.Graphics, glyphLocation, checkBoxState);
+
+            var text = Items[e.Index]?.ToString() ?? string.Empty;
+            var textRect = new Rectangle(e.Bounds.Left + glyphSize.Width + 10, e.Bounds.Top, Math.Max(10, e.Bounds.Width - glyphSize.Width - 14), e.Bounds.Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                text,
+                e.Font ?? Font,
+                textRect,
+                foreColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+
+            e.DrawFocusRectangle();
         }
     }
+
+
 }
