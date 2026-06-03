@@ -79,6 +79,14 @@ namespace TeamApp
             chkDeletedOnly.Text = "삭제 이미지만";
             chkEditedOnly.Text = "교체/편집만";
             btnCheckDonkey.Visible = false;
+            grpTrain.Text = "AI 학습";
+            lblCommand.Visible = false;
+            chkManualCommandEdit.Visible = false;
+            txtTrainCommand.Visible = false;
+            btnTrain.Visible = false;
+            btnCheckDonkey.Visible = false;
+            btnTrainingPaths.Text = "AI 학습";
+            lblHint.Text = "AI 학습 버튼을 눌러 학습 환경, 경로, 실행 명령, 학습 결과를 별도 창에서 관리하세요.";
             lstFrames.CheckOnClick = false;
             lstFrames.ResolveVisualState = index => index >= 0 && index < visibleFrames.Count
                 ? new FrameListVisualState(visibleFrames[index].Deleted, visibleFrames[index].Edited, visibleFrames[index].IsAnomaly)
@@ -134,7 +142,7 @@ namespace TeamApp
                 var rightX = grpPreview.Right + gap;
                 grpFilter.SetBounds(rightX, contentTop, rightWidth, 285);
                 grpAnomaly.SetBounds(rightX, grpFilter.Bottom + gap, rightWidth, 190);
-                grpTrain.SetBounds(rightX, grpAnomaly.Bottom + gap, rightWidth, 220);
+                grpTrain.SetBounds(rightX, grpAnomaly.Bottom + gap, rightWidth, 120);
                 grpLog.SetBounds(rightX, grpTrain.Bottom + gap, rightWidth, Math.Max(100, contentTop + contentHeight - (grpTrain.Bottom + gap)));
 
                 LayoutFrameList();
@@ -260,16 +268,17 @@ namespace TeamApp
         private void LayoutTrainPanel()
         {
             var w = grpTrain.ClientSize.Width;
-            lblCommand.SetBounds(14, 25, 120, 20);
-            chkManualCommandEdit.SetBounds(Math.Max(150, w - 120), 23, 105, 24);
-            txtTrainCommand.SetBounds(14, 48, Math.Max(180, w - 28), Math.Max(70, grpTrain.ClientSize.Height - 150));
-            var btnTop = txtTrainCommand.Bottom + 8;
+            lblCommand.Visible = false;
+            chkManualCommandEdit.Visible = false;
+            txtTrainCommand.Visible = false;
+            btnTrain.Visible = false;
             btnCheckDonkey.Visible = false;
-            btnCheckDonkey.SetBounds(0, 0, 1, 1);
-            var trainButtonWidth = Math.Max(110, (w - 38) / 2);
-            btnTrainingPaths.SetBounds(14, btnTop, trainButtonWidth, 30);
-            btnTrain.SetBounds(btnTrainingPaths.Right + 10, btnTop, trainButtonWidth, 30);
-            lblHint.SetBounds(14, btnTop + 36, Math.Max(180, w - 28), Math.Max(34, grpTrain.ClientSize.Height - btnTop - 40));
+
+            var buttonWidth = Math.Max(160, Math.Min(260, w - 28));
+            btnTrainingPaths.Text = "AI 학습";
+            btnTrainingPaths.SetBounds(14, 28, buttonWidth, 38);
+            lblHint.SetBounds(14, 74, Math.Max(180, w - 28), Math.Max(34, grpTrain.ClientSize.Height - 82));
+            lblHint.Text = "학습 환경/경로/명령 실행/성공률은 AI 학습 창에서 관리합니다.";
         }
 
         private void LayoutLogPanel()
@@ -2001,6 +2010,13 @@ namespace TeamApp
 
             UpdateSelectionLabel();
             picFrame.Invalidate();
+
+            // 이미지 가리기 작업은 드래그 선택 후 마우스를 놓는 즉시 적용합니다.
+            // 기존 버튼 방식도 유지하지만, 수업 시연에서는 선택-적용 흐름이 한 번에 보이도록 처리합니다.
+            if (selectedImageRect.HasValue && selectedImageRect.Value.Width > 1 && selectedImageRect.Value.Height > 1)
+            {
+                ApplyMaskRegionFromSelection(true);
+            }
         }
 
         private void picFrame_Paint(object? sender, PaintEventArgs e)
@@ -2170,15 +2186,20 @@ namespace TeamApp
 
         private void btnMaskRegion_Click(object? sender, EventArgs e)
         {
+            ApplyMaskRegionFromSelection(false);
+        }
+
+        private bool ApplyMaskRegionFromSelection(bool autoApplied)
+        {
             if (!TryGetSelectedBitmapAndRect(out var bitmap, out var rect))
             {
-                return;
+                return false;
             }
 
             var targets = GetTargetRecordsForBatch();
             if (targets.Count == 0)
             {
-                return;
+                return false;
             }
 
             Color? fixedColor = cmbMaskMode.Text switch
@@ -2211,7 +2232,8 @@ namespace TeamApp
                 LoadImage(current);
             }
             ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
-            AppendLog($"이미지 영역 가리기 적용: {success}/{targets.Count}개, 영역={rect}");
+            AppendLog($"이미지 영역 가리기 {(autoApplied ? "자동 " : string.Empty)}적용: {success}/{targets.Count}개, 영역={rect}");
+            return success > 0;
         }
 
         private void btnReplaceRegion_Click(object? sender, EventArgs e)
@@ -2702,6 +2724,140 @@ namespace TeamApp
             return false;
         }
 
+
+        internal string TrainingRootFolder => rootFolder;
+        internal string TrainingDataFolder => dataFolder;
+        internal string TrainingImagesFolder => imagesFolder;
+
+        internal string GetTrainingDataPathForDialog()
+        {
+            return GetTrainingDataPath();
+        }
+
+        internal string GetTrainingModelPathForDialog()
+        {
+            return GetTrainingModelPath();
+        }
+
+        internal void RefreshTrainingPathDefaultsForDialog(bool overwriteExisting)
+        {
+            RefreshTrainingPathDefaults(overwriteExisting);
+        }
+
+        internal void SetTrainingOverridesFromDialog(string dataPath, string modelPath)
+        {
+            trainingDataPathOverride = dataPath ?? string.Empty;
+            trainingModelPathOverride = modelPath ?? string.Empty;
+        }
+
+        internal void StoreGeneratedTrainingCommand(string command, bool interactiveSshPassword)
+        {
+            trainingCommandGenerated = true;
+            trainingUseSshPasswordInput = interactiveSshPassword;
+            trainingSshPassword = string.Empty;
+            txtTrainCommand.Text = command;
+            UpdateTrainingCommandEditState();
+        }
+
+        internal void AppendTrainingLog(string text)
+        {
+            AppendLog(text);
+        }
+
+        internal string ConvertVirtualBoxPathForDialog(string path)
+        {
+            return ConvertWindowsSharedFolderPathToVirtualBoxPath(path);
+        }
+
+        internal string CreateTrainingDatasetForDialog(int datasetModeIndex, bool excludeAnomalyFromSelection, string modeName)
+        {
+            if ((datasetModeIndex == 1 || (datasetModeIndex == 2 && excludeAnomalyFromSelection)) &&
+                !allFrames.Any(record => record.IsAnomaly || record.MovingAverage.HasValue || record.Volatility.HasValue))
+            {
+                DetectAnomalies(false);
+            }
+
+            List<FrameRecord> records = datasetModeIndex switch
+            {
+                1 => allFrames.Where(record => !record.Deleted && !record.IsAnomaly).ToList(),
+                2 => visibleFrames.Where(record => !record.Deleted).ToList(),
+                _ => allFrames.Where(record => !record.Deleted).ToList()
+            };
+
+            if (datasetModeIndex == 2 && excludeAnomalyFromSelection)
+            {
+                records = records.Where(record => !record.IsAnomaly).ToList();
+            }
+
+            records = records.OrderBy(record => record.GlobalOrder).ToList();
+            if (records.Count == 0)
+            {
+                throw new InvalidOperationException("학습 데이터셋으로 내보낼 프레임이 없습니다.");
+            }
+
+            return CreateTrainingDataset(records, modeName);
+        }
+
+        internal bool TryMapTrainingPathToLocalFile(string trainingPath, out string localPath)
+        {
+            localPath = string.Empty;
+            if (string.IsNullOrWhiteSpace(trainingPath))
+            {
+                return false;
+            }
+
+            var value = trainingPath.Trim().Trim('"');
+            if (!IsLikelyRemoteOrUnixPath(value))
+            {
+                localPath = value;
+                return true;
+            }
+
+            if (TryConvertWslPathToWindows(value, out var windowsPath))
+            {
+                localPath = windowsPath;
+                return true;
+            }
+
+            var vboxRoot = ConvertWindowsSharedFolderPathToVirtualBoxPath(rootFolder).Replace('\\', '/').TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(vboxRoot) && value.Replace('\\', '/').StartsWith(vboxRoot + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = value.Replace('\\', '/').Substring(vboxRoot.Length).TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                localPath = Path.Combine(rootFolder, relative);
+                return true;
+            }
+
+            var vboxData = ConvertWindowsSharedFolderPathToVirtualBoxPath(dataFolder).Replace('\\', '/').TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(vboxData) && value.Replace('\\', '/').StartsWith(vboxData + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = value.Replace('\\', '/').Substring(vboxData.Length).TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                localPath = Path.Combine(dataFolder, relative);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryConvertWslPathToWindows(string path, out string windowsPath)
+        {
+            windowsPath = string.Empty;
+            var value = path.Replace('\\', '/');
+            if (!value.StartsWith("/mnt/", StringComparison.OrdinalIgnoreCase) || value.Length < 7)
+            {
+                return false;
+            }
+
+            var drive = value[5];
+            if (!char.IsLetter(drive) || value[6] != '/')
+            {
+                return false;
+            }
+
+            var rest = value.Substring(7).Replace('/', Path.DirectorySeparatorChar);
+            windowsPath = char.ToUpperInvariant(drive) + ":" + Path.DirectorySeparatorChar + rest;
+            return true;
+        }
+
         private void btnTrainingPaths_Click(object? sender, EventArgs e)
         {
             if (string.IsNullOrWhiteSpace(dataFolder) || !Directory.Exists(dataFolder))
@@ -2711,328 +2867,18 @@ namespace TeamApp
             }
 
             RefreshTrainingPathDefaults(false);
-
-            using var dlg = new Form
-            {
-                Text = "AI 학습 명령 생성",
-                StartPosition = FormStartPosition.CenterParent,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MinimizeBox = false,
-                MaximizeBox = false,
-                ClientSize = new Size(880, 650)
-            };
-
-            var lblInfo = new Label
-            {
-                Location = new Point(14, 12),
-                Size = new Size(850, 38),
-                Text = "학습 데이터 범위와 실행 환경을 선택하면 경로를 환경에 맞게 변환하고 donkey train 명령을 자동 생성합니다. 삭제되어 _deleted_backup으로 이동된 프레임은 학습 데이터셋에서 제외됩니다."
-            };
-
-            var lblDatasetMode = new Label { Location = new Point(14, 62), Size = new Size(130, 22), Text = "학습 데이터 범위" };
-            var cmbDatasetMode = new ComboBox
-            {
-                Location = new Point(150, 60),
-                Size = new Size(360, 23),
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            cmbDatasetMode.Items.AddRange(new object[]
-            {
-                "이상치 포함 전체 데이터 학습",
-                "이상치 제외 학습",
-                "데이터 필터링 선택군만 학습"
-            });
-            cmbDatasetMode.SelectedIndex = 0;
-
-            var chkFilterExcludeAnomaly = new CheckBox
-            {
-                Location = new Point(530, 60),
-                Size = new Size(310, 24),
-                Text = "선택군에서도 이상치 제외",
-                Checked = false
-            };
-
-            var lblEnv = new Label { Location = new Point(14, 98), Size = new Size(130, 22), Text = "실행 환경" };
-            var cmbEnvironment = new ComboBox
-            {
-                Location = new Point(150, 96),
-                Size = new Size(220, 23),
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            cmbEnvironment.Items.AddRange(new object[] { "Windows 환경 빌드", "WSL 환경 빌드", "VirtualBox 환경 빌드" });
-            cmbEnvironment.SelectedIndex = 2;
-
-            var lblData = new Label { Location = new Point(14, 138), Size = new Size(130, 22), Text = "학습 data/tub" };
-            var txtData = new TextBox { Location = new Point(150, 136), Size = new Size(570, 23), Text = GetTrainingDataPath() };
-            var btnBrowseData = new Button { Location = new Point(730, 134), Size = new Size(110, 28), Text = "찾아보기" };
-
-            var lblModel = new Label { Location = new Point(14, 174), Size = new Size(130, 22), Text = "모델 저장 경로" };
-            var txtModel = new TextBox { Location = new Point(150, 172), Size = new Size(570, 23), Text = GetTrainingModelPath() };
-            var btnBrowseModel = new Button { Location = new Point(730, 170), Size = new Size(110, 28), Text = "저장 위치" };
-
-            var lblExtra = new Label { Location = new Point(14, 210), Size = new Size(130, 22), Text = "추가/보정 인자" };
-            var txtExtraArgs = new TextBox { Location = new Point(150, 208), Size = new Size(570, 23), Text = string.Empty };
-            var lblExtraHint = new Label { Location = new Point(730, 210), Size = new Size(125, 22), Text = "예: --type linear" };
-
-            var grpRemote = new GroupBox
-            {
-                Location = new Point(14, 246),
-                Size = new Size(840, 148),
-                Text = "WSL / VirtualBox 실행 옵션"
-            };
-            var lblActivate = new Label { Location = new Point(12, 26), Size = new Size(120, 22), Text = "환경 활성화" };
-            var txtActivate = new TextBox { Location = new Point(130, 24), Size = new Size(330, 23), Text = "source ~/miniconda3/bin/activate e2e_env" };
-            var lblSshUser = new Label { Location = new Point(12, 62), Size = new Size(70, 22), Text = "SSH user" };
-            var txtSshUser = new TextBox { Location = new Point(82, 60), Size = new Size(110, 23), Text = "xytron" };
-            var lblSshHost = new Label { Location = new Point(205, 62), Size = new Size(70, 22), Text = "host" };
-            var txtSshHost = new TextBox { Location = new Point(250, 60), Size = new Size(120, 23), Text = "127.0.0.1" };
-            var lblSshPort = new Label { Location = new Point(383, 62), Size = new Size(40, 22), Text = "port" };
-            var txtSshPort = new TextBox { Location = new Point(425, 60), Size = new Size(70, 23), Text = "2222" };
-            var lblSshPassword = new Label { Location = new Point(510, 62), Size = new Size(95, 22), Text = "SSH 인증" };
-            var txtSshPassword = new TextBox { Location = new Point(605, 60), Size = new Size(1, 1), UseSystemPasswordChar = true, Text = string.Empty, Visible = false };
-            var chkUsePassword = new CheckBox { Location = new Point(605, 60), Size = new Size(210, 24), Text = "비밀번호 입력형", Checked = true };
-            var lblRemoteWork = new Label { Location = new Point(510, 26), Size = new Size(95, 22), Text = "원격 mycar" };
-            var txtRemoteWork = new TextBox { Location = new Point(605, 24), Size = new Size(220, 23), Text = ConvertWindowsSharedFolderPathToVirtualBoxPath(rootFolder) };
-            var lblRemoteHint = new Label { Location = new Point(12, 96), Size = new Size(805, 40), Text = "비밀번호 입력형을 체크하면 학습 실행 시 Windows 콘솔이 열리고 SSH 비밀번호를 직접 입력합니다. 비밀번호는 UI/로그/명령 미리보기에 저장되거나 표시되지 않습니다." };
-            grpRemote.Controls.AddRange(new Control[] { lblActivate, txtActivate, lblSshUser, txtSshUser, lblSshHost, txtSshHost, lblSshPort, txtSshPort, lblSshPassword, txtSshPassword, chkUsePassword, lblRemoteWork, txtRemoteWork, lblRemoteHint });
-
-            var btnUseLoaded = new Button { Location = new Point(150, 408), Size = new Size(135, 30), Text = "현재 로드 경로" };
-            var btnConvertWsl = new Button { Location = new Point(294, 408), Size = new Size(135, 30), Text = "WSL 경로 변환" };
-            var btnConvertVBox = new Button { Location = new Point(438, 408), Size = new Size(160, 30), Text = "VirtualBox 경로 변환" };
-            var btnExportSet = new Button { Location = new Point(608, 408), Size = new Size(152, 30), Text = "학습 데이터 생성" };
-            var btnBuild = new Button { Location = new Point(770, 408), Size = new Size(84, 30), Text = "명령 생성" };
-
-            var lblPreviewTitle = new Label { Location = new Point(14, 454), Size = new Size(130, 22), Text = "명령 미리보기" };
-            var txtPreview = new TextBox
-            {
-                Location = new Point(150, 452),
-                Size = new Size(704, 88),
-                Multiline = true,
-                ScrollBars = ScrollBars.Vertical,
-                ReadOnly = true
-            };
-
-            var lblGuide = new Label
-            {
-                Location = new Point(150, 548),
-                Size = new Size(704, 42),
-                Text = "Windows: C:\\... 경로 / WSL: /mnt/c/... 경로 / VirtualBox: ssh + /media/sf_... 경로로 생성됩니다. 생성된 _training_sets 폴더는 공유폴더 안에 만들어집니다."
-            };
-
-            var btnOk = new Button { Location = new Point(638, 608), Size = new Size(100, 32), Text = "적용", DialogResult = DialogResult.OK };
-            var btnCancel = new Button { Location = new Point(748, 608), Size = new Size(100, 32), Text = "취소", DialogResult = DialogResult.Cancel };
-
-            List<FrameRecord> SelectTrainingRecords()
-            {
-                if ((cmbDatasetMode.SelectedIndex == 1 || (cmbDatasetMode.SelectedIndex == 2 && chkFilterExcludeAnomaly.Checked)) &&
-                    !allFrames.Any(record => record.IsAnomaly || record.MovingAverage.HasValue || record.Volatility.HasValue))
-                {
-                    DetectAnomalies(false);
-                }
-
-                var records = cmbDatasetMode.SelectedIndex switch
-                {
-                    1 => allFrames.Where(record => !record.Deleted && !record.IsAnomaly).ToList(),
-                    2 => visibleFrames.Where(record => !record.Deleted).ToList(),
-                    _ => allFrames.Where(record => !record.Deleted).ToList()
-                };
-
-                if (cmbDatasetMode.SelectedIndex == 2 && chkFilterExcludeAnomaly.Checked)
-                {
-                    records = records.Where(record => !record.IsAnomaly).ToList();
-                }
-
-                return records.OrderBy(record => record.GlobalOrder).ToList();
-            }
-
-            string EnvironmentName()
-            {
-                return cmbEnvironment.SelectedIndex switch
-                {
-                    1 => "wsl",
-                    2 => "virtualbox",
-                    _ => "windows"
-                };
-            }
-
-            void RefreshPreview()
-            {
-                txtPreview.Text = BuildTrainingCommand(
-                    EnvironmentName(),
-                    txtData.Text.Trim(),
-                    txtModel.Text.Trim(),
-                    txtExtraArgs.Text.Trim(),
-                    txtActivate.Text.Trim(),
-                    txtSshUser.Text.Trim(),
-                    txtSshHost.Text.Trim(),
-                    txtSshPort.Text.Trim(),
-                    txtRemoteWork.Text.Trim(),
-                    chkUsePassword.Checked ? SshPasswordPlaceholder : string.Empty);
-            }
-
-            void ExportAndSetPath(bool showMessage)
-            {
-                var records = SelectTrainingRecords();
-                if (records.Count == 0)
-                {
-                    MessageBox.Show("학습 데이터셋으로 내보낼 프레임이 없습니다.", "데이터 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                var exportPath = CreateTrainingDataset(records, cmbDatasetMode.Text);
-                var env = EnvironmentName();
-                txtData.Text = ConvertPathForEnvironment(exportPath, env);
-                var modelPath = Path.Combine(Path.GetDirectoryName(exportPath) ?? dataFolder, "models", "mypilot.h5");
-                txtModel.Text = ConvertPathForEnvironment(modelPath, env);
-                if (env == "virtualbox")
-                {
-                    txtRemoteWork.Text = ConvertWindowsSharedFolderPathToVirtualBoxPath(rootFolder);
-                }
-                RefreshPreview();
-                if (showMessage)
-                {
-                    MessageBox.Show($"학습 데이터 {records.Count}개를 생성했습니다.\n{exportPath}", "학습 데이터 생성", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            }
-
-            btnBrowseData.Click += (_, _) =>
-            {
-                using var folderDialog = new FolderBrowserDialog
-                {
-                    Description = "학습에 사용할 data/tub 폴더를 선택하세요",
-                    UseDescriptionForTitle = true,
-                    SelectedPath = Directory.Exists(txtData.Text) ? txtData.Text : (Directory.Exists(dataFolder) ? dataFolder : string.Empty)
-                };
-
-                if (folderDialog.ShowDialog(dlg) == DialogResult.OK)
-                {
-                    txtData.Text = folderDialog.SelectedPath;
-                    RefreshPreview();
-                }
-            };
-
-            btnBrowseModel.Click += (_, _) =>
-            {
-                using var saveDialog = new SaveFileDialog
-                {
-                    Title = "학습 모델 저장 경로",
-                    Filter = "Keras/TensorFlow model (*.h5;*.keras)|*.h5;*.keras|All files (*.*)|*.*",
-                    FileName = Path.GetFileName(txtModel.Text)
-                };
-
-                var currentModelDirectory = Path.GetDirectoryName(txtModel.Text);
-                if (!string.IsNullOrWhiteSpace(currentModelDirectory) && Directory.Exists(currentModelDirectory))
-                {
-                    saveDialog.InitialDirectory = currentModelDirectory;
-                }
-
-                if (saveDialog.ShowDialog(dlg) == DialogResult.OK)
-                {
-                    txtModel.Text = saveDialog.FileName;
-                    RefreshPreview();
-                }
-            };
-
-            btnUseLoaded.Click += (_, _) =>
-            {
-                txtData.Text = dataFolder;
-                var modelRoot = string.IsNullOrWhiteSpace(rootFolder) ? dataFolder : rootFolder;
-                txtModel.Text = Path.Combine(modelRoot, "models", "mypilot.h5");
-                RefreshPreview();
-            };
-
-            btnConvertWsl.Click += (_, _) =>
-            {
-                txtData.Text = ConvertPathForEnvironment(txtData.Text, "wsl");
-                txtModel.Text = ConvertPathForEnvironment(txtModel.Text, "wsl");
-                RefreshPreview();
-            };
-
-            btnConvertVBox.Click += (_, _) =>
-            {
-                txtData.Text = ConvertPathForEnvironment(txtData.Text, "virtualbox");
-                txtModel.Text = ConvertPathForEnvironment(txtModel.Text, "virtualbox");
-                txtRemoteWork.Text = ConvertPathForEnvironment(rootFolder, "virtualbox");
-                RefreshPreview();
-            };
-
-            btnExportSet.Click += (_, _) => ExportAndSetPath(true);
-            btnBuild.Click += (_, _) =>
-            {
-                if (cmbDatasetMode.SelectedIndex != 0 || allFrames.Any(record => record.Deleted))
-                {
-                    ExportAndSetPath(false);
-                }
-                RefreshPreview();
-            };
-
-            cmbEnvironment.SelectedIndexChanged += (_, _) =>
-            {
-                var env = EnvironmentName();
-                txtData.Text = ConvertPathForEnvironment(GetTrainingDataPath(), env);
-                txtModel.Text = ConvertPathForEnvironment(GetTrainingModelPath(), env);
-                RefreshPreview();
-            };
-            cmbDatasetMode.SelectedIndexChanged += (_, _) => RefreshPreview();
-            chkFilterExcludeAnomaly.CheckedChanged += (_, _) => RefreshPreview();
-            txtData.TextChanged += (_, _) => RefreshPreview();
-            txtModel.TextChanged += (_, _) => RefreshPreview();
-            txtExtraArgs.TextChanged += (_, _) => RefreshPreview();
-            txtActivate.TextChanged += (_, _) => RefreshPreview();
-            txtSshUser.TextChanged += (_, _) => RefreshPreview();
-            txtSshHost.TextChanged += (_, _) => RefreshPreview();
-            txtSshPort.TextChanged += (_, _) => RefreshPreview();
-            txtSshPassword.TextChanged += (_, _) =>
-            {
-                if (!string.IsNullOrWhiteSpace(txtSshPassword.Text) && !chkUsePassword.Checked)
-                {
-                    chkUsePassword.Checked = true;
-                }
-                RefreshPreview();
-            };
-            chkUsePassword.CheckedChanged += (_, _) => RefreshPreview();
-            txtRemoteWork.TextChanged += (_, _) => RefreshPreview();
-
-            dlg.Controls.AddRange(new Control[]
-            {
-                lblInfo, lblDatasetMode, cmbDatasetMode, chkFilterExcludeAnomaly,
-                lblEnv, cmbEnvironment, lblData, txtData, btnBrowseData,
-                lblModel, txtModel, btnBrowseModel, lblExtra, txtExtraArgs, lblExtraHint,
-                grpRemote, btnUseLoaded, btnConvertWsl, btnConvertVBox, btnExportSet, btnBuild,
-                lblPreviewTitle, txtPreview, lblGuide, btnOk, btnCancel
-            });
-            dlg.AcceptButton = btnOk;
-            dlg.CancelButton = btnCancel;
-            RefreshPreview();
-
-            if (dlg.ShowDialog(this) == DialogResult.OK)
-            {
-                trainingDataPathOverride = txtData.Text.Trim();
-                trainingModelPathOverride = txtModel.Text.Trim();
-                trainingUseSshPasswordInput = chkUsePassword.Checked;
-                trainingSshPassword = string.Empty;
-                txtTrainCommand.Text = txtPreview.Text.Trim();
-                trainingCommandGenerated = true;
-                chkManualCommandEdit.Checked = false;
-                UpdateTrainingCommandEditState();
-                AppendLog("학습 명령 자동 생성 완료");
-                AppendLog("학습 data 경로 설정: " + trainingDataPathOverride);
-                AppendLog("모델 저장 경로 설정: " + trainingModelPathOverride);
-                if (trainingUseSshPasswordInput)
-                {
-                    AppendLog("VirtualBox SSH 인증 설정: 비밀번호 입력형 사용(실행 시 콘솔에서 직접 입력, UI/로그 비표시)");
-                }
-            }
+            using var dialog = new Form2(this);
+            dialog.ShowDialog(this);
         }
 
-        private string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir, string sshPassword)
+        internal string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir, string sshPassword)
         {
             var extra = string.IsNullOrWhiteSpace(extraArgs) ? string.Empty : " " + extraArgs.Trim();
             if (environment == "wsl")
             {
                 var bashData = ConvertPathForEnvironment(dataPath, "wsl");
                 var bashModel = ConvertPathForEnvironment(modelPath, "wsl");
-                var body = BuildBashTrainBody(activateCommand, string.Empty, bashData, bashModel, extraArgs);
+                var body = BuildBashTrainBody(activateCommand, ConvertPathForEnvironment(rootFolder, "wsl"), bashData, bashModel, extraArgs);
                 return "wsl bash -lc \"" + body.Replace("\"", "\\\"") + "\"";
             }
 
@@ -3054,7 +2900,7 @@ namespace TeamApp
                 return "ssh " + sshOptions + portPart + userHost + " \"" + body.Replace("\"", "\\\"") + "\"";
             }
 
-            return "donkey train --tub \"" + dataPath + "\" --model \"" + modelPath + "\"" + extra;
+            return "python train.py --tub \"" + dataPath + "\" --model \"" + modelPath + "\"" + extra;
         }
 
         private static string BuildBashTrainBody(string activateCommand, string workDir, string dataPath, string modelPath, string extraArgs)
@@ -3069,7 +2915,7 @@ namespace TeamApp
                 parts.Add("cd '" + EscapeBashSingleQuoted(workDir) + "'");
             }
 
-            var command = "donkey train --tub '" + EscapeBashSingleQuoted(dataPath) + "' --model '" + EscapeBashSingleQuoted(modelPath) + "'";
+            var command = "python train.py --tub '" + EscapeBashSingleQuoted(dataPath) + "' --model '" + EscapeBashSingleQuoted(modelPath) + "'";
             if (!string.IsNullOrWhiteSpace(extraArgs))
             {
                 command += " " + extraArgs.Trim();
@@ -3078,7 +2924,7 @@ namespace TeamApp
             return string.Join(" && ", parts);
         }
 
-        private string ConvertPathForEnvironment(string path, string environment)
+        internal string ConvertPathForEnvironment(string path, string environment)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -3172,7 +3018,7 @@ namespace TeamApp
             return json.ToJsonString(JsonOptions);
         }
 
-        private static string ConvertWindowsSharedFolderPathToVirtualBoxPath(string path)
+        internal static string ConvertWindowsSharedFolderPathToVirtualBoxPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -3329,7 +3175,7 @@ namespace TeamApp
             }
         }
 
-        private static string EnableOpenSshPasswordPrompt(string command)
+        internal static string EnableOpenSshPasswordPrompt(string command)
         {
             var trimmed = command.TrimStart();
             if (!trimmed.StartsWith("ssh ", StringComparison.OrdinalIgnoreCase))
@@ -3377,7 +3223,7 @@ namespace TeamApp
                    Regex.IsMatch(command, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*=\s*0");
         }
 
-        private Task<int> RunInteractiveConsoleCommandAsync(string command)
+        internal Task<int> RunInteractiveConsoleCommandAsync(string command)
         {
             var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
             var shell = Environment.GetEnvironmentVariable("ComSpec");
@@ -3386,22 +3232,14 @@ namespace TeamApp
                 shell = "cmd.exe";
             }
 
+            var commandWithExit = command + " & set TEAMAPP_EXIT=!ERRORLEVEL! & echo. & echo [TeamApp] Process exit code: !TEAMAPP_EXIT! & echo [TeamApp] Press any key to return to the UI... & pause > nul & exit /b !TEAMAPP_EXIT!";
             var startInfo = new ProcessStartInfo
             {
                 FileName = shell,
-                Arguments = "/D /S /K " + command,
+                Arguments = "/D /V:ON /S /C " + commandWithExit,
                 WorkingDirectory = workingDirectory,
-
-                // ExitCode 읽으려면 false
-                UseShellExecute = false,
-
-                // 콘솔창 보이게
-                CreateNoWindow = false,
-
-                // 비밀번호 직접 입력해야 하므로 리다이렉트 금지
-                RedirectStandardInput = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Normal
             };
 
             return RunExternalProcessAsync(startInfo);
@@ -3464,7 +3302,7 @@ namespace TeamApp
             return command;
         }
 
-        private static string MaskSensitiveCommand(string command)
+        internal static string MaskSensitiveCommand(string command)
         {
             var masked = command.Replace(SshPasswordPlaceholder, "********");
             return Regex.Replace(masked, "(?i)(-pw\\s+)(\"[^\"]*\"|\\S+)", "$1********");
