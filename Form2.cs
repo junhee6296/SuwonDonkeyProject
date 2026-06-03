@@ -177,7 +177,12 @@ namespace TeamApp
                 var exportPath = owner.CreateTrainingDatasetForDialog(cmbDatasetMode.SelectedIndex, chkExcludeAnomaly.Checked, cmbDatasetMode.Text);
                 var env = EnvironmentName();
                 txtData.Text = owner.ConvertPathForEnvironment(exportPath, env);
-                var modelRoot = Path.GetDirectoryName(exportPath) ?? owner.TrainingRootFolder;
+
+                // 학습 데이터셋은 data/_training_sets 아래에 따로 만들지만,
+                // 결과 모델은 config.py/train.py가 있는 mycar/models에 저장되도록 유지한다.
+                var modelRoot = string.IsNullOrWhiteSpace(owner.TrainingRootFolder)
+                    ? owner.TrainingDataFolder
+                    : owner.TrainingRootFolder;
                 txtModel.Text = owner.ConvertPathForEnvironment(Path.Combine(modelRoot, "models", "mypilot.h5"), env);
                 if (env == "virtualbox")
                 {
