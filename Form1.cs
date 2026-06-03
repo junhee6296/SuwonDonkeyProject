@@ -2957,7 +2957,8 @@ namespace TeamApp
             Directory.CreateDirectory(exportImages);
 
             var catalogPath = Path.Combine(exportRoot, "catalog_0.catalog");
-            using var writer = new StreamWriter(catalogPath, false, Encoding.UTF8);
+            var catalogLines = new List<string>();
+            var catalogLineLengths = new List<int>();
             var count = 0;
             foreach (var record in records)
             {
@@ -2968,15 +2969,26 @@ namespace TeamApp
                     continue;
                 }
 
+                if (!IsReadableImageFile(sourceImage))
+                {
+                    AppendLog("학습 데이터 이미지 손상 제외: " + record.ImageFile);
+                    continue;
+                }
+
                 var extension = Path.GetExtension(sourceImage);
                 if (string.IsNullOrWhiteSpace(extension))
                 {
                     extension = ".jpg";
                 }
+
                 var exportedFileName = count.ToString("000000", CultureInfo.InvariantCulture) + "_" + Path.GetFileNameWithoutExtension(sourceImage) + extension;
-                var relativeImage = Path.Combine("images", exportedFileName).Replace('\\', '/');
                 File.Copy(sourceImage, Path.Combine(exportImages, exportedFileName), true);
-                writer.WriteLine(BuildCatalogJsonForExport(record, relativeImage, count));
+
+                // DonkeyCar v5 TubRecord는 base_path/images/<cam/image_array> 형태로 이미지를 찾는다.
+                // 따라서 catalog에는 images/ 접두사를 넣지 않고 파일명만 기록한다.
+                var line = BuildCatalogJsonForExport(record, exportedFileName, count);
+                catalogLines.Add(line);
+                catalogLineLengths.Add(line.Length + 1); // LF 기준. 아래 WriteTextLf()도 LF로 저장한다.
                 count++;
             }
 
@@ -2985,8 +2997,95 @@ namespace TeamApp
                 throw new InvalidOperationException("학습 데이터셋에 복사할 수 있는 이미지가 없습니다.");
             }
 
+            WriteTextLf(catalogPath, catalogLines);
+            WriteCatalogManifestForExport(exportRoot, catalogLineLengths);
+            WriteTubManifestForExport(exportRoot, count);
+
             AppendLog($"학습 데이터셋 생성: {count}개 -> {exportRoot}");
             return exportRoot;
+        }
+
+        private static bool IsReadableImageFile(string path)
+        {
+            try
+            {
+                using var image = Image.FromFile(path);
+                return image.Width > 0 && image.Height > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void WriteTubManifestForExport(string exportRoot, int recordCount)
+        {
+            var sourceManifest = Path.Combine(dataFolder, "manifest.json");
+            var manifestPath = Path.Combine(exportRoot, "manifest.json");
+            var lines = ReadManifestHeaderLines(sourceManifest);
+
+            var paths = new JsonArray();
+            paths.Add("catalog_0.catalog");
+            var deletedIndexes = new JsonArray();
+            var catalogMetadata = new JsonObject
+            {
+                ["paths"] = paths,
+                ["current_index"] = recordCount,
+                ["max_len"] = Math.Max(1000, recordCount),
+                ["deleted_indexes"] = deletedIndexes
+            };
+
+            lines.Add(catalogMetadata.ToJsonString(JsonOptions));
+            WriteTextLf(manifestPath, lines);
+        }
+
+        private static List<string> ReadManifestHeaderLines(string sourceManifest)
+        {
+            var lines = new List<string>();
+            if (File.Exists(sourceManifest))
+            {
+                foreach (var line in File.ReadLines(sourceManifest, Encoding.UTF8).Take(4))
+                {
+                    lines.Add(line.TrimEnd('\r', '\n'));
+                }
+            }
+
+            while (lines.Count < 4)
+            {
+                lines.Add(lines.Count switch
+                {
+                    0 => "[\"cam/image_array\",\"user/angle\",\"user/throttle\",\"user/mode\"]",
+                    1 => "[\"image_array\",\"float\",\"float\",\"str\"]",
+                    2 => "{}",
+                    _ => "{\"created_at\":" + DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture) + "}"
+                });
+            }
+
+            return lines;
+        }
+
+        private static void WriteCatalogManifestForExport(string exportRoot, IReadOnlyList<int> catalogLineLengths)
+        {
+            var lineLengths = new JsonArray();
+            foreach (var length in catalogLineLengths)
+            {
+                lineLengths.Add(length);
+            }
+
+            var manifest = new JsonObject
+            {
+                ["path"] = "catalog_0.catalog_manifest",
+                ["created_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ["start_index"] = 0,
+                ["line_lengths"] = lineLengths
+            };
+
+            WriteTextLf(Path.Combine(exportRoot, "catalog_0.catalog_manifest"), new[] { manifest.ToJsonString(JsonOptions) });
+        }
+
+        private static void WriteTextLf(string path, IEnumerable<string> lines)
+        {
+            File.WriteAllText(path, string.Join("\n", lines) + "\n", new UTF8Encoding(false));
         }
 
         private static string BuildCatalogJsonForExport(FrameRecord record, string relativeImage, int newIndex)
