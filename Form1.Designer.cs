@@ -104,6 +104,7 @@ namespace TeamApp
             btnCheckDonkey = new Button();
             grpLog = new GroupBox();
             txtLog = new TextBox();
+            btnCanny = new Button();
             grpList.SuspendLayout();
             grpPreview.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
@@ -254,6 +255,7 @@ namespace TeamApp
             // 
             // grpImageEdit
             // 
+            grpImageEdit.Controls.Add(btnCanny);
             grpImageEdit.Controls.Add(lblEditHint);
             grpImageEdit.Controls.Add(cmbMaskMode);
             grpImageEdit.Controls.Add(btnMaskRegion);
@@ -889,6 +891,15 @@ namespace TeamApp
             txtLog.Size = new Size(360, 115);
             txtLog.TabIndex = 0;
             // 
+            // btnCanny
+            // 
+            btnCanny.Location = new Point(415, 15);
+            btnCanny.Name = "btnCanny";
+            btnCanny.Size = new Size(75, 23);
+            btnCanny.TabIndex = 6;
+            btnCanny.Text = "캐니에지";
+            btnCanny.UseVisualStyleBackColor = true;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -1009,5 +1020,6 @@ namespace TeamApp
         private System.Windows.Forms.Label lblHint = null!;
         private System.Windows.Forms.GroupBox grpLog = null!;
         private System.Windows.Forms.TextBox txtLog = null!;
+        private Button btnCanny;
     }
 }
