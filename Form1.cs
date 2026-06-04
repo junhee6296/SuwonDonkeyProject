@@ -45,7 +45,10 @@ namespace TeamApp
         private readonly Label lblFrameSearch = new Label();
         private readonly TextBox txtFrameSearch = new TextBox();
         private readonly Button btnClearFrameSearch = new Button();
+        private readonly CheckBox chkVisionOverlay = new CheckBox();
+        private readonly Label lblVisionSummary = new Label();
         private Form2? activeTrainingForm;
+        private FrameVisionAnalysis? currentVisionAnalysis;
         private bool isUpdatingFrameList;
         private int currentVisibleIndex = -1;
 
@@ -87,6 +90,7 @@ namespace TeamApp
             chkEditedOnly.Text = "교체/편집만";
             btnCheckDonkey.Visible = false;
             InitializeFrameSearchControls();
+            InitializeVisionOverlayControls();
             lstFrames.ItemCheck += lstFrames_ItemCheck;
             grpTrain.Text = "AI 학습";
             lblCommand.Visible = false;
@@ -141,6 +145,32 @@ namespace TeamApp
             if (!grpList.Controls.Contains(btnClearFrameSearch))
             {
                 grpList.Controls.Add(btnClearFrameSearch);
+            }
+        }
+
+        private void InitializeVisionOverlayControls()
+        {
+            chkVisionOverlay.Text = "주행 방향/장애물 표시";
+            chkVisionOverlay.AutoSize = false;
+            chkVisionOverlay.Checked = true;
+            chkVisionOverlay.CheckedChanged += (_, _) =>
+            {
+                UpdateVisionSummaryLabel();
+                picFrame.Invalidate();
+            };
+
+            lblVisionSummary.AutoSize = false;
+            lblVisionSummary.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            lblVisionSummary.ForeColor = Color.DarkSlateGray;
+            lblVisionSummary.Text = "방향/장애물 분석 대기";
+
+            if (!grpImageEdit.Controls.Contains(chkVisionOverlay))
+            {
+                grpImageEdit.Controls.Add(chkVisionOverlay);
+            }
+            if (!grpImageEdit.Controls.Contains(lblVisionSummary))
+            {
+                grpImageEdit.Controls.Add(lblVisionSummary);
             }
         }
 
@@ -221,15 +251,17 @@ namespace TeamApp
             var innerW = Math.Max(320, w - 24);
             var graphHeight = 70;
             var bottomInfoHeight = 176;
-            var editHeight = 78;
+            var editHeight = 108;
             var deleteHeight = 64;
             var pictureHeight = Math.Max(190, h - 24 - editHeight - deleteHeight - 22 - 45 - 36 - bottomInfoHeight - graphHeight);
 
             picFrame.SetBounds(12, 22, innerW, pictureHeight);
             grpImageEdit.SetBounds(12, picFrame.Bottom + 8, innerW, editHeight);
             lblEditHint.SetBounds(10, 20, Math.Max(120, grpImageEdit.ClientSize.Width - 20), 18);
-            cmbMaskMode.SetBounds(10, 44, 80, 23);
-            var btnY = 42;
+            chkVisionOverlay.SetBounds(10, 43, 150, 22);
+            lblVisionSummary.SetBounds(chkVisionOverlay.Right + 8, 43, Math.Max(120, grpImageEdit.ClientSize.Width - chkVisionOverlay.Right - 18), 22);
+            cmbMaskMode.SetBounds(10, 74, 80, 23);
+            var btnY = 72;
             var buttonW = Math.Max(80, (grpImageEdit.ClientSize.Width - 110) / 4);
             btnMaskRegion.SetBounds(98, btnY, buttonW, 27);
             btnReplaceRegion.SetBounds(btnMaskRegion.Right + 6, btnY, buttonW + 10, 27);
@@ -1158,6 +1190,8 @@ namespace TeamApp
             if (!File.Exists(imagePath))
             {
                 loadedImagePath = string.Empty;
+                currentVisionAnalysis = null;
+                UpdateVisionSummaryLabel();
                 DrawPlaceholder(picFrame, "이미지 파일을 찾을 수 없습니다.\n" + imagePath);
                 return;
             }
@@ -1167,11 +1201,15 @@ namespace TeamApp
                 using var stream = File.OpenRead(imagePath);
                 using var source = Image.FromStream(stream);
                 var copy = new Bitmap(source);
+                currentVisionAnalysis = AnalyzeFrameVision(copy, record);
                 ReplaceFrameImage(copy);
+                UpdateVisionSummaryLabel();
             }
             catch (Exception ex)
             {
                 loadedImagePath = string.Empty;
+                currentVisionAnalysis = null;
+                UpdateVisionSummaryLabel();
                 DrawPlaceholder(picFrame, "이미지를 여는 중 오류가 발생했습니다.\n" + ex.Message);
             }
         }
@@ -1238,6 +1276,8 @@ namespace TeamApp
             loadedImagePath = string.Empty;
             selectedImageRect = null;
             imageDirty = false;
+            currentVisionAnalysis = null;
+            UpdateVisionSummaryLabel();
             lblCurrentIndex.Text = "현재 인덱스: -";
             lblCurrentImage.Text = "이미지: -";
             lblCurrentMode.Text = "mode/catalog: -";
@@ -2135,7 +2175,15 @@ namespace TeamApp
 
         private void picFrame_Paint(object? sender, PaintEventArgs e)
         {
-            if (!selectedImageRect.HasValue || picFrame.Image == null)
+            if (picFrame.Image == null)
+            {
+                return;
+            }
+
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            DrawVisionOverlay(e.Graphics);
+
+            if (!selectedImageRect.HasValue)
             {
                 return;
             }
@@ -2150,6 +2198,262 @@ namespace TeamApp
             using var brush = new SolidBrush(Color.FromArgb(40, Color.Red));
             e.Graphics.FillRectangle(brush, controlRect);
             e.Graphics.DrawRectangle(pen, controlRect);
+        }
+
+        private void DrawVisionOverlay(Graphics graphics)
+        {
+            if (!chkVisionOverlay.Checked || currentVisionAnalysis == null || picFrame.Image == null)
+            {
+                return;
+            }
+
+            var viewport = GetImageViewport();
+            if (viewport.Width <= 0 || viewport.Height <= 0)
+            {
+                return;
+            }
+
+            var analysis = currentVisionAnalysis;
+            foreach (var obstacle in analysis.ObstacleRects)
+            {
+                var rect = ImageRectToControlRect(obstacle);
+                if (rect.Width <= 0 || rect.Height <= 0)
+                {
+                    continue;
+                }
+
+                using var obstaclePen = new Pen(Color.OrangeRed, 2f);
+                using var obstacleBrush = new SolidBrush(Color.FromArgb(35, Color.OrangeRed));
+                graphics.FillRectangle(obstacleBrush, rect);
+                graphics.DrawRectangle(obstaclePen, rect);
+            }
+
+            var origin = new PointF(viewport.Left + viewport.Width / 2f, viewport.Bottom - Math.Max(24, viewport.Height * 0.08f));
+            var angleOffset = (float)Math.Max(-1.0, Math.Min(1.0, analysis.SteeringAngle));
+            var roadOffset = (float)Math.Max(-1.0, Math.Min(1.0, analysis.RoadCenterOffset));
+            var mixedOffset = angleOffset * 0.75f + roadOffset * 0.25f;
+            var forward = analysis.Throttle >= -0.001;
+            var targetY = forward ? viewport.Top + viewport.Height * 0.26f : viewport.Bottom - viewport.Height * 0.10f;
+            var targetX = viewport.Left + viewport.Width / 2f + mixedOffset * viewport.Width * 0.38f;
+            var target = new PointF(targetX, targetY);
+
+            var arrowColor = analysis.Throttle < -0.02
+                ? Color.Firebrick
+                : analysis.Throttle < 0.03 ? Color.DarkOrange : Color.LimeGreen;
+
+            using (var arrowPen = new Pen(arrowColor, 4f) { CustomEndCap = new AdjustableArrowCap(5, 6, true) })
+            {
+                graphics.DrawLine(arrowPen, origin, target);
+            }
+
+            var infoLines = new[]
+            {
+                "방향: " + analysis.DirectionText,
+                "스로틀: " + analysis.ThrottleText,
+                "도로 중심: " + analysis.RoadText,
+                "장애물: " + analysis.ObstacleText,
+                analysis.TrainingHint
+            }.Where(line => !string.IsNullOrWhiteSpace(line)).ToArray();
+
+            using var font = new Font("맑은 고딕", 9.5F, FontStyle.Bold, GraphicsUnit.Point, 129);
+            var lineHeight = font.GetHeight(graphics) + 4;
+            var boxWidth = Math.Min(viewport.Width - 16, Math.Max(260, (int)(viewport.Width * 0.48)));
+            var boxHeight = (int)Math.Ceiling(lineHeight * infoLines.Length + 12);
+            var box = new Rectangle(viewport.Left + 8, viewport.Top + 8, boxWidth, boxHeight);
+            using (var bg = new SolidBrush(Color.FromArgb(180, Color.Black)))
+            using (var border = new Pen(Color.FromArgb(210, Color.White), 1f))
+            using (var textBrush = new SolidBrush(Color.White))
+            {
+                graphics.FillRectangle(bg, box);
+                graphics.DrawRectangle(border, box);
+                var y = box.Top + 6f;
+                foreach (var line in infoLines)
+                {
+                    graphics.DrawString(line, font, textBrush, box.Left + 8, y);
+                    y += lineHeight;
+                }
+            }
+        }
+
+        private FrameVisionAnalysis AnalyzeFrameVision(Bitmap bitmap, FrameRecord record)
+        {
+            var width = Math.Max(1, bitmap.Width);
+            var height = Math.Max(1, bitmap.Height);
+            var steering = record.Angle ?? 0.0;
+            var throttle = record.Throttle ?? 0.0;
+
+            var roiTop = (int)(height * 0.42);
+            var roiBottom = Math.Max(roiTop + 1, (int)(height * 0.92));
+            var leftScore = 0.0;
+            var centerScore = 0.0;
+            var rightScore = 0.0;
+            var leftCount = 0;
+            var centerCount = 0;
+            var rightCount = 0;
+            var obstacleGrid = new Dictionary<(int X, int Y), int>();
+            var obstacleSamples = 0;
+            var sampleStep = Math.Max(2, Math.Min(width, height) / 80);
+
+            for (var y = roiTop; y < roiBottom; y += sampleStep)
+            {
+                for (var x = 0; x < width; x += sampleStep)
+                {
+                    var color = bitmap.GetPixel(x, y);
+                    var brightness = color.GetBrightness();
+                    var saturation = color.GetSaturation();
+                    var greenDominance = Math.Max(0, color.G - Math.Max(color.R, color.B)) / 255.0;
+                    var whiteLine = brightness > 0.72 && saturation < 0.28;
+                    var yellowLine = color.R > 130 && color.G > 110 && color.B < 90;
+                    var roadLike = whiteLine || yellowLine || (greenDominance > 0.12 && brightness > 0.18) || (saturation < 0.38 && brightness > 0.22);
+                    var score = roadLike ? 1.0 + brightness + greenDominance : Math.Max(0, brightness - saturation * 0.35);
+
+                    if (x < width / 3)
+                    {
+                        leftScore += score;
+                        leftCount++;
+                    }
+                    else if (x < width * 2 / 3)
+                    {
+                        centerScore += score;
+                        centerCount++;
+                    }
+                    else
+                    {
+                        rightScore += score;
+                        rightCount++;
+                    }
+
+                    var darkObject = brightness < 0.16 && saturation > 0.10;
+                    var redObject = color.R > 145 && color.R > color.G * 1.35 && color.R > color.B * 1.35;
+                    var blueObject = color.B > 145 && color.B > color.R * 1.25 && color.B > color.G * 1.15;
+                    var obstacleCandidate = (darkObject || redObject || blueObject) && y > height * 0.35 && y < height * 0.88;
+                    if (obstacleCandidate)
+                    {
+                        var gx = Math.Min(7, x * 8 / width);
+                        var gy = Math.Min(5, (y - roiTop) * 6 / Math.Max(1, roiBottom - roiTop));
+                        var key = (gx, gy);
+                        obstacleGrid[key] = obstacleGrid.TryGetValue(key, out var current) ? current + 1 : 1;
+                        obstacleSamples++;
+                    }
+                }
+            }
+
+            leftScore /= Math.Max(1, leftCount);
+            centerScore /= Math.Max(1, centerCount);
+            rightScore /= Math.Max(1, rightCount);
+            var totalScore = Math.Max(0.0001, leftScore + centerScore + rightScore);
+            var roadCenterOffset = ((rightScore - leftScore) / totalScore) * 1.8;
+            roadCenterOffset = Math.Max(-1.0, Math.Min(1.0, roadCenterOffset));
+
+            var obstacles = obstacleGrid
+                .Where(pair => pair.Value >= Math.Max(3, 20 / sampleStep))
+                .OrderByDescending(pair => pair.Value)
+                .Take(6)
+                .Select(pair =>
+                {
+                    var cellWidth = width / 8.0;
+                    var cellHeight = (roiBottom - roiTop) / 6.0;
+                    return new Rectangle(
+                        Math.Max(0, (int)Math.Round(pair.Key.X * cellWidth)),
+                        Math.Max(0, roiTop + (int)Math.Round(pair.Key.Y * cellHeight)),
+                        Math.Max(6, (int)Math.Round(cellWidth)),
+                        Math.Max(6, (int)Math.Round(cellHeight)));
+                })
+                .ToList();
+
+            var directionText = steering switch
+            {
+                < -0.25 => "좌회전 강함",
+                < -0.07 => "좌회전",
+                > 0.25 => "우회전 강함",
+                > 0.07 => "우회전",
+                _ => "직진 유지"
+            };
+
+            var throttleText = throttle switch
+            {
+                < -0.02 => "후진 예측 위험",
+                < 0.02 => "정지/출발 불안정",
+                < 0.10 => "저속",
+                > 0.65 => "고속 주의",
+                _ => "전진 안정"
+            };
+
+            var roadText = roadCenterOffset switch
+            {
+                < -0.22 => "도로/차선 중심 좌측",
+                > 0.22 => "도로/차선 중심 우측",
+                _ => "중앙 안정"
+            };
+
+            var obstacleText = obstacles.Count == 0
+                ? "후보 없음"
+                : obstacles.Count.ToString(CultureInfo.InvariantCulture) + "개 후보";
+
+            var hint = BuildVisionTrainingHint(throttle, steering, obstacles.Count, roadCenterOffset, record.IsAnomaly);
+            return new FrameVisionAnalysis(
+                steering,
+                throttle,
+                roadCenterOffset,
+                directionText,
+                throttleText,
+                roadText,
+                obstacleText,
+                hint,
+                obstacles,
+                obstacleSamples);
+        }
+
+        private static string BuildVisionTrainingHint(double throttle, double steering, int obstacleCount, double roadCenterOffset, bool isAnomaly)
+        {
+            if (throttle < -0.02)
+            {
+                return "피드백: 후진 throttle 데이터는 Full Auto 앞뒤 튐 원인";
+            }
+
+            if (throttle < 0.02)
+            {
+                return "피드백: 정지 프레임은 학습 전 필터링 권장";
+            }
+
+            if (isAnomaly)
+            {
+                return "피드백: 조향 스파이크 후보, 이상치 제외 학습 권장";
+            }
+
+            if (obstacleCount > 0)
+            {
+                return "피드백: 장애물 후보 영역 확인 후 삭제/마스킹 판단";
+            }
+
+            if (Math.Abs(roadCenterOffset) > 0.35 && Math.Abs(steering) < 0.05)
+            {
+                return "피드백: 도로 중심과 조향이 어긋남, 데이터 확인 필요";
+            }
+
+            return "피드백: 전진/조향 학습에 사용 가능";
+        }
+
+        private void UpdateVisionSummaryLabel()
+        {
+            if (lblVisionSummary == null)
+            {
+                return;
+            }
+
+            if (!chkVisionOverlay.Checked)
+            {
+                lblVisionSummary.Text = "화면 분석 표시 꺼짐";
+                return;
+            }
+
+            if (currentVisionAnalysis == null)
+            {
+                lblVisionSummary.Text = "방향/장애물 분석 대기";
+                return;
+            }
+
+            lblVisionSummary.Text = $"{currentVisionAnalysis.DirectionText} / {currentVisionAnalysis.ThrottleText} / 장애물 {currentVisionAnalysis.ObstacleText}";
         }
 
         private Rectangle BuildImageRectangle(Point a, Point b)
@@ -4413,6 +4717,44 @@ namespace TeamApp
             return string.IsNullOrWhiteSpace(value) ? "-" : value;
         }
 
+
+        private sealed class FrameVisionAnalysis
+        {
+            public FrameVisionAnalysis(
+                double steeringAngle,
+                double throttle,
+                double roadCenterOffset,
+                string directionText,
+                string throttleText,
+                string roadText,
+                string obstacleText,
+                string trainingHint,
+                IReadOnlyList<Rectangle> obstacleRects,
+                int obstacleSamples)
+            {
+                SteeringAngle = steeringAngle;
+                Throttle = throttle;
+                RoadCenterOffset = roadCenterOffset;
+                DirectionText = directionText;
+                ThrottleText = throttleText;
+                RoadText = roadText;
+                ObstacleText = obstacleText;
+                TrainingHint = trainingHint;
+                ObstacleRects = obstacleRects;
+                ObstacleSamples = obstacleSamples;
+            }
+
+            public double SteeringAngle { get; }
+            public double Throttle { get; }
+            public double RoadCenterOffset { get; }
+            public string DirectionText { get; }
+            public string ThrottleText { get; }
+            public string RoadText { get; }
+            public string ObstacleText { get; }
+            public string TrainingHint { get; }
+            public IReadOnlyList<Rectangle> ObstacleRects { get; }
+            public int ObstacleSamples { get; }
+        }
 
         internal sealed class TrainingDatasetPreview
         {
