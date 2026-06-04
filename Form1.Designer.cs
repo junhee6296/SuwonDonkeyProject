@@ -1,21 +1,24 @@
-﻿namespace TeamApp
+namespace TeamApp
 {
     partial class Form1
     {
         /// <summary>
-        ///  Required designer variable.
+        /// Required designer variable.
         /// </summary>
-        private System.ComponentModel.IContainer components = null;
+        private System.ComponentModel.IContainer? components = null;
 
         /// <summary>
-        ///  Clean up any resources being used.
+        /// Clean up any resources being used.
         /// </summary>
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null))
+            if (disposing)
             {
-                components.Dispose();
+                picFrame?.Image?.Dispose();
+                picGraph?.Image?.Dispose();
+                autoPlayTimer?.Dispose();
+                components?.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -23,441 +26,988 @@
         #region Windows Form Designer generated code
 
         /// <summary>
-        ///  Required method for Designer support - do not modify
-        ///  the contents of this method with the code editor.
+        /// Required method for Designer support - do not modify
+        /// the contents of this method with the code editor.
         /// </summary>
         private void InitializeComponent()
         {
-            btnSelectFolder = new Button();
-            lstIndexList = new ListBox();
+            btnOpenFolder = new Button();
             txtSelectedFolder = new TextBox();
-            picCurrentIndexImage = new PictureBox();
-            trbChangeIndex = new TrackBar();
-            btnBefore = new Button();
-            btnAfter = new Button();
+            btnOpenDataFolder = new Button();
+            grpList = new GroupBox();
+            btnCheckAllFrames = new Button();
+            btnClearCheckedFrames = new Button();
+            lstFrames = new ColoredCheckedListBox();
+            lblStats = new Label();
+            grpPreview = new GroupBox();
+            picFrame = new PictureBox();
+            grpImageEdit = new GroupBox();
+            lblEditHint = new Label();
+            cmbMaskMode = new ComboBox();
+            btnMaskRegion = new Button();
+            btnReplaceRegion = new Button();
+            btnClearSelection = new Button();
+            btnRestoreImage = new Button();
+            grpDeleteOps = new GroupBox();
             btnDelete = new Button();
-            btnSave = new Button();
-            grpEditValue = new GroupBox();
-            txtChangeAngle = new TextBox();
-            txtChangeThrottle = new TextBox();
-            lblChangeAngle = new Label();
-            lblChangeThrottle = new Label();
-            lblCurrentIndex = new Label();
-            lblCurrentThrottle = new Label();
-            lblCurrentAngle = new Label();
             btnUndo = new Button();
-            ((System.ComponentModel.ISupportInitialize)picCurrentIndexImage).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)trbChangeIndex).BeginInit();
-            grpEditValue.SuspendLayout();
+            pnlTimeline = new Panel();
+            trbFrame = new TrackBar();
+            btnPrev = new Button();
+            btnPlay = new Button();
+            lblPlaySpeed = new Label();
+            trbPlaySpeed = new TrackBar();
+            btnNext = new Button();
+            btnSave = new Button();
+            lblCurrentIndex = new Label();
+            lblCurrentImage = new Label();
+            lblCurrentMode = new Label();
+            lblAngle = new Label();
+            txtAngle = new TextBox();
+            lblThrottle = new Label();
+            txtThrottle = new TextBox();
+            lblGraph = new Label();
+            picGraph = new PictureBox();
+            grpFilter = new GroupBox();
+            chkThrottlePositive = new CheckBox();
+            chkExcludeAngleZero = new CheckBox();
+            chkAngleRange = new CheckBox();
+            chkThrottleRange = new CheckBox();
+            chkAnomalyOnly = new CheckBox();
+            chkDeletedOnly = new CheckBox();
+            chkEditedOnly = new CheckBox();
+            lblRangeMin = new Label();
+            lblRangeMax = new Label();
+            numAngleMin = new NumericUpDown();
+            numAngleMax = new NumericUpDown();
+            numThrottleMin = new NumericUpDown();
+            numThrottleMax = new NumericUpDown();
+            btnApplyFilter = new Button();
+            btnClearFilter = new Button();
+            grpAnomaly = new GroupBox();
+            lblAnomalyWindow = new Label();
+            numAnomalyWindow = new NumericUpDown();
+            lblAnomalySigma = new Label();
+            numAnomalySigma = new NumericUpDown();
+            btnAnalyzeAnomaly = new Button();
+            btnClearAnomaly = new Button();
+            btnNextAnomaly = new Button();
+            lblAnomalyStatus = new Label();
+            lblAnomalyHint = new Label();
+            grpTrain = new GroupBox();
+            lblCommand = new Label();
+            chkManualCommandEdit = new CheckBox();
+            txtTrainCommand = new TextBox();
+            btnTrainingPaths = new Button();
+            btnTrain = new Button();
+            lblHint = new Label();
+            btnCheckDonkey = new Button();
+            grpLog = new GroupBox();
+            txtLog = new TextBox();
+            grpList.SuspendLayout();
+            grpPreview.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
+            grpImageEdit.SuspendLayout();
+            grpDeleteOps.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)trbFrame).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)trbPlaySpeed).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)picGraph).BeginInit();
+            grpFilter.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numAngleMin).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numAngleMax).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numThrottleMin).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numThrottleMax).BeginInit();
+            grpAnomaly.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numAnomalyWindow).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numAnomalySigma).BeginInit();
+            grpTrain.SuspendLayout();
+            grpLog.SuspendLayout();
             SuspendLayout();
             // 
-            // btnSelectFolder
+            // btnOpenFolder
             // 
-            btnSelectFolder.Location = new Point(12, 22);
-            btnSelectFolder.Name = "btnSelectFolder";
-            btnSelectFolder.Size = new Size(94, 29);
-            btnSelectFolder.TabIndex = 0;
-            btnSelectFolder.Text = "폴더선택";
-            btnSelectFolder.UseVisualStyleBackColor = true;
-            btnSelectFolder.Click += btnSelectFolder_Click;
-            // 
-            // lstIndexList
-            // 
-            lstIndexList.FormattingEnabled = true;
-            lstIndexList.Location = new Point(12, 67);
-            lstIndexList.Name = "lstIndexList";
-            lstIndexList.Size = new Size(175, 504);
-            lstIndexList.TabIndex = 1;
+            btnOpenFolder.Location = new Point(12, 12);
+            btnOpenFolder.Name = "btnOpenFolder";
+            btnOpenFolder.Size = new Size(96, 30);
+            btnOpenFolder.TabIndex = 0;
+            btnOpenFolder.Text = "폴더 열기";
+            btnOpenFolder.UseVisualStyleBackColor = true;
+            btnOpenFolder.Click += btnOpenFolder_Click;
             // 
             // txtSelectedFolder
             // 
-            txtSelectedFolder.Location = new Point(112, 22);
+            txtSelectedFolder.Location = new Point(116, 15);
             txtSelectedFolder.Name = "txtSelectedFolder";
-            txtSelectedFolder.Size = new Size(401, 27);
-            txtSelectedFolder.TabIndex = 2;
-            txtSelectedFolder.Text = "mycar 폴더를 선택해주세요";
+            txtSelectedFolder.ReadOnly = true;
+            txtSelectedFolder.Size = new Size(770, 23);
+            txtSelectedFolder.TabIndex = 1;
+            txtSelectedFolder.Text = "mycar 폴더, data 폴더, 또는 tub 폴더를 선택하세요.";
             // 
-            // picCurrentIndexImage
+            // btnOpenDataFolder
             // 
-            picCurrentIndexImage.Location = new Point(203, 67);
-            picCurrentIndexImage.Name = "picCurrentIndexImage";
-            picCurrentIndexImage.Size = new Size(310, 293);
-            picCurrentIndexImage.TabIndex = 3;
-            picCurrentIndexImage.TabStop = false;
+            btnOpenDataFolder.Location = new Point(894, 12);
+            btnOpenDataFolder.Name = "btnOpenDataFolder";
+            btnOpenDataFolder.Size = new Size(210, 30);
+            btnOpenDataFolder.TabIndex = 2;
+            btnOpenDataFolder.Text = "선택한 폴더 경로 확인하기";
+            btnOpenDataFolder.UseVisualStyleBackColor = true;
+            btnOpenDataFolder.Click += btnOpenDataFolder_Click;
             // 
-            // trbChangeIndex
+            // grpList
             // 
-            trbChangeIndex.Location = new Point(203, 371);
-            trbChangeIndex.Name = "trbChangeIndex";
-            trbChangeIndex.Size = new Size(310, 56);
-            trbChangeIndex.TabIndex = 4;
-            trbChangeIndex.Scroll += trackBar1_Scroll;
+            grpList.Controls.Add(btnCheckAllFrames);
+            grpList.Controls.Add(btnClearCheckedFrames);
+            grpList.Controls.Add(lstFrames);
+            grpList.Controls.Add(lblStats);
+            grpList.Location = new Point(12, 52);
+            grpList.Name = "grpList";
+            grpList.Size = new Size(270, 760);
+            grpList.TabIndex = 3;
+            grpList.TabStop = false;
+            grpList.Text = "프레임 목록";
             // 
-            // btnBefore
+            // btnCheckAllFrames
             // 
-            btnBefore.Location = new Point(203, 412);
-            btnBefore.Name = "btnBefore";
-            btnBefore.Size = new Size(36, 29);
-            btnBefore.TabIndex = 5;
-            btnBefore.Text = "<";
-            btnBefore.UseVisualStyleBackColor = true;
-            btnBefore.Click += btnBefore_Click;
+            btnCheckAllFrames.Location = new Point(10, 24);
+            btnCheckAllFrames.Name = "btnCheckAllFrames";
+            btnCheckAllFrames.Size = new Size(120, 28);
+            btnCheckAllFrames.TabIndex = 1;
+            btnCheckAllFrames.Text = "전체 선택";
+            btnCheckAllFrames.UseVisualStyleBackColor = true;
+            btnCheckAllFrames.Click += btnCheckAllFrames_Click;
             // 
-            // btnAfter
+            // btnClearCheckedFrames
             // 
-            btnAfter.Location = new Point(245, 412);
-            btnAfter.Name = "btnAfter";
-            btnAfter.Size = new Size(36, 29);
-            btnAfter.TabIndex = 6;
-            btnAfter.Text = ">";
-            btnAfter.UseVisualStyleBackColor = true;
-            btnAfter.Click += btnAfter_Click;
+            btnClearCheckedFrames.Location = new Point(140, 24);
+            btnClearCheckedFrames.Name = "btnClearCheckedFrames";
+            btnClearCheckedFrames.Size = new Size(120, 28);
+            btnClearCheckedFrames.TabIndex = 2;
+            btnClearCheckedFrames.Text = "전체 해제";
+            btnClearCheckedFrames.UseVisualStyleBackColor = true;
+            btnClearCheckedFrames.Click += btnClearCheckedFrames_Click;
+            // 
+            // lstFrames
+            // 
+            lstFrames.CheckOnClick = true;
+            lstFrames.FormattingEnabled = true;
+            lstFrames.HorizontalScrollbar = true;
+            lstFrames.IntegralHeight = false;
+            lstFrames.Location = new Point(10, 58);
+            lstFrames.Name = "lstFrames";
+            lstFrames.ResolveVisualState = null;
+            lstFrames.ScrollAlwaysVisible = true;
+            lstFrames.Size = new Size(250, 615);
+            lstFrames.TabIndex = 0;
+            lstFrames.SelectedIndexChanged += lstFrames_SelectedIndexChanged;
+            // 
+            // lblStats
+            // 
+            lblStats.Location = new Point(10, 680);
+            lblStats.Name = "lblStats";
+            lblStats.Size = new Size(250, 70);
+            lblStats.TabIndex = 1;
+            lblStats.Text = "데이터를 불러오면 통계가 표시됩니다.";
+            // 
+            // grpPreview
+            // 
+            grpPreview.Controls.Add(picFrame);
+            grpPreview.Controls.Add(grpImageEdit);
+            grpPreview.Controls.Add(grpDeleteOps);
+            grpPreview.Controls.Add(pnlTimeline);
+            grpPreview.Controls.Add(trbFrame);
+            grpPreview.Controls.Add(btnPrev);
+            grpPreview.Controls.Add(btnPlay);
+            grpPreview.Controls.Add(lblPlaySpeed);
+            grpPreview.Controls.Add(trbPlaySpeed);
+            grpPreview.Controls.Add(btnNext);
+            grpPreview.Controls.Add(btnSave);
+            grpPreview.Controls.Add(lblCurrentIndex);
+            grpPreview.Controls.Add(lblCurrentImage);
+            grpPreview.Controls.Add(lblCurrentMode);
+            grpPreview.Controls.Add(lblAngle);
+            grpPreview.Controls.Add(txtAngle);
+            grpPreview.Controls.Add(lblThrottle);
+            grpPreview.Controls.Add(txtThrottle);
+            grpPreview.Controls.Add(lblGraph);
+            grpPreview.Controls.Add(picGraph);
+            grpPreview.Location = new Point(292, 52);
+            grpPreview.Name = "grpPreview";
+            grpPreview.Size = new Size(530, 760);
+            grpPreview.TabIndex = 4;
+            grpPreview.TabStop = false;
+            grpPreview.Text = "이미지 / 프레임 탐색 · 편집";
+            // 
+            // picFrame
+            // 
+            picFrame.BackColor = Color.Black;
+            picFrame.BorderStyle = BorderStyle.FixedSingle;
+            picFrame.Location = new Point(12, 22);
+            picFrame.Name = "picFrame";
+            picFrame.Size = new Size(506, 268);
+            picFrame.SizeMode = PictureBoxSizeMode.Zoom;
+            picFrame.TabIndex = 0;
+            picFrame.TabStop = false;
+            picFrame.Paint += picFrame_Paint;
+            picFrame.MouseDown += picFrame_MouseDown;
+            picFrame.MouseMove += picFrame_MouseMove;
+            picFrame.MouseUp += picFrame_MouseUp;
+            // 
+            // grpImageEdit
+            // 
+            grpImageEdit.Controls.Add(lblEditHint);
+            grpImageEdit.Controls.Add(cmbMaskMode);
+            grpImageEdit.Controls.Add(btnMaskRegion);
+            grpImageEdit.Controls.Add(btnReplaceRegion);
+            grpImageEdit.Controls.Add(btnClearSelection);
+            grpImageEdit.Controls.Add(btnRestoreImage);
+            grpImageEdit.Location = new Point(12, 298);
+            grpImageEdit.Name = "grpImageEdit";
+            grpImageEdit.Size = new Size(506, 78);
+            grpImageEdit.TabIndex = 1;
+            grpImageEdit.TabStop = false;
+            grpImageEdit.Text = "이미지 부분 가리기 / 바꾸기";
+            // 
+            // lblEditHint
+            // 
+            lblEditHint.AutoEllipsis = true;
+            lblEditHint.Location = new Point(10, 20);
+            lblEditHint.Name = "lblEditHint";
+            lblEditHint.Size = new Size(490, 18);
+            lblEditHint.TabIndex = 0;
+            lblEditHint.Text = "이미지 위에서 마우스로 드래그해 영역을 선택한 뒤 편집 버튼을 누르세요.";
+            // 
+            // cmbMaskMode
+            // 
+            cmbMaskMode.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbMaskMode.FormattingEnabled = true;
+            cmbMaskMode.Items.AddRange(new object[] { "검정", "흰색", "회색", "평균색" });
+            cmbMaskMode.Location = new Point(10, 44);
+            cmbMaskMode.Name = "cmbMaskMode";
+            cmbMaskMode.Size = new Size(80, 23);
+            cmbMaskMode.TabIndex = 1;
+            // 
+            // btnMaskRegion
+            // 
+            btnMaskRegion.Location = new Point(98, 42);
+            btnMaskRegion.Name = "btnMaskRegion";
+            btnMaskRegion.Size = new Size(85, 27);
+            btnMaskRegion.TabIndex = 2;
+            btnMaskRegion.Text = "영역 가리기";
+            btnMaskRegion.UseVisualStyleBackColor = true;
+            btnMaskRegion.Click += btnMaskRegion_Click;
+            // 
+            // btnReplaceRegion
+            // 
+            btnReplaceRegion.Location = new Point(190, 42);
+            btnReplaceRegion.Name = "btnReplaceRegion";
+            btnReplaceRegion.Size = new Size(95, 27);
+            btnReplaceRegion.TabIndex = 3;
+            btnReplaceRegion.Text = "이미지로 교체";
+            btnReplaceRegion.UseVisualStyleBackColor = true;
+            btnReplaceRegion.Click += btnReplaceRegion_Click;
+            // 
+            // btnClearSelection
+            // 
+            btnClearSelection.Location = new Point(292, 42);
+            btnClearSelection.Name = "btnClearSelection";
+            btnClearSelection.Size = new Size(82, 27);
+            btnClearSelection.TabIndex = 4;
+            btnClearSelection.Text = "선택 해제";
+            btnClearSelection.UseVisualStyleBackColor = true;
+            btnClearSelection.Click += btnClearSelection_Click;
+            // 
+            // btnRestoreImage
+            // 
+            btnRestoreImage.Location = new Point(382, 42);
+            btnRestoreImage.Name = "btnRestoreImage";
+            btnRestoreImage.Size = new Size(92, 27);
+            btnRestoreImage.TabIndex = 5;
+            btnRestoreImage.Text = "원본 복구";
+            btnRestoreImage.UseVisualStyleBackColor = true;
+            btnRestoreImage.Click += btnRestoreImage_Click;
+            // 
+            // grpDeleteOps
+            // 
+            grpDeleteOps.Controls.Add(btnDelete);
+            grpDeleteOps.Controls.Add(btnUndo);
+            grpDeleteOps.Location = new Point(12, 384);
+            grpDeleteOps.Name = "grpDeleteOps";
+            grpDeleteOps.Size = new Size(506, 58);
+            grpDeleteOps.TabIndex = 2;
+            grpDeleteOps.TabStop = false;
+            grpDeleteOps.Text = "이미지 삭제 / 복구";
             // 
             // btnDelete
             // 
             btnDelete.BackColor = Color.Red;
-            btnDelete.ForeColor = SystemColors.ButtonFace;
-            btnDelete.Location = new Point(380, 412);
+            btnDelete.ForeColor = Color.White;
+            btnDelete.Location = new Point(12, 22);
             btnDelete.Name = "btnDelete";
-            btnDelete.Size = new Size(66, 29);
-            btnDelete.TabIndex = 7;
-            btnDelete.Text = "삭제";
+            btnDelete.Size = new Size(180, 28);
+            btnDelete.TabIndex = 8;
+            btnDelete.Text = "이미지 삭제";
             btnDelete.UseVisualStyleBackColor = false;
+            btnDelete.Click += btnDelete_Click;
             // 
             // btnUndo
             // 
-            btnUndo.BackColor = Color.White;
-            btnUndo.ForeColor = Color.Black;
-            btnUndo.Location = new Point(447, 412);
+            btnUndo.Location = new Point(268, 22);
             btnUndo.Name = "btnUndo";
-            btnUndo.Size = new Size(78, 29);
-            btnUndo.TabIndex = 13;
-            btnUndo.Text = "되돌리기";
-            btnUndo.UseVisualStyleBackColor = false;
+            btnUndo.Size = new Size(180, 28);
+            btnUndo.TabIndex = 7;
+            btnUndo.Text = "삭제 이미지 복구";
+            btnUndo.UseVisualStyleBackColor = true;
+            btnUndo.Click += btnUndo_Click;
+            // 
+            // pnlTimeline
+            // 
+            pnlTimeline.BackColor = Color.White;
+            pnlTimeline.BorderStyle = BorderStyle.FixedSingle;
+            pnlTimeline.Location = new Point(12, 450);
+            pnlTimeline.Name = "pnlTimeline";
+            pnlTimeline.Size = new Size(506, 18);
+            pnlTimeline.TabIndex = 2;
+            pnlTimeline.Paint += pnlTimeline_Paint;
+            // 
+            // trbFrame
+            // 
+            trbFrame.LargeChange = 1;
+            trbFrame.Location = new Point(12, 470);
+            trbFrame.Maximum = 0;
+            trbFrame.Name = "trbFrame";
+            trbFrame.Size = new Size(506, 45);
+            trbFrame.TabIndex = 3;
+            trbFrame.Scroll += trbFrame_Scroll;
+            // 
+            // btnPrev
+            // 
+            btnPrev.Location = new Point(12, 517);
+            btnPrev.Name = "btnPrev";
+            btnPrev.Size = new Size(122, 30);
+            btnPrev.TabIndex = 4;
+            btnPrev.Text = "이전";
+            btnPrev.UseVisualStyleBackColor = true;
+            btnPrev.Click += btnPrev_Click;
+            // 
+            // btnPlay
+            // 
+            btnPlay.Location = new Point(142, 517);
+            btnPlay.Name = "btnPlay";
+            btnPlay.Size = new Size(122, 30);
+            btnPlay.TabIndex = 5;
+            btnPlay.Text = "자동 재생";
+            btnPlay.UseVisualStyleBackColor = true;
+            btnPlay.Click += btnPlay_Click;
+            // 
+            // lblPlaySpeed
+            // 
+            lblPlaySpeed.Location = new Point(142, 550);
+            lblPlaySpeed.Name = "lblPlaySpeed";
+            lblPlaySpeed.Size = new Size(90, 20);
+            lblPlaySpeed.TabIndex = 6;
+            lblPlaySpeed.Text = "재생속도 250ms";
+            // 
+            // trbPlaySpeed
+            // 
+            trbPlaySpeed.Location = new Point(238, 547);
+            trbPlaySpeed.Maximum = 20;
+            trbPlaySpeed.Minimum = 1;
+            trbPlaySpeed.Name = "trbPlaySpeed";
+            trbPlaySpeed.Size = new Size(140, 45);
+            trbPlaySpeed.TabIndex = 7;
+            trbPlaySpeed.TickFrequency = 2;
+            trbPlaySpeed.Value = 4;
+            trbPlaySpeed.Scroll += trbPlaySpeed_Scroll;
+            // 
+            // btnNext
+            // 
+            btnNext.Location = new Point(272, 517);
+            btnNext.Name = "btnNext";
+            btnNext.Size = new Size(122, 30);
+            btnNext.TabIndex = 6;
+            btnNext.Text = "다음";
+            btnNext.UseVisualStyleBackColor = true;
+            btnNext.Click += btnNext_Click;
             // 
             // btnSave
             // 
-            btnSave.BackColor = Color.Lime;
-            btnSave.Location = new Point(447, 412);
+            btnSave.BackColor = Color.LimeGreen;
+            btnSave.ForeColor = Color.White;
+            btnSave.Location = new Point(402, 517);
             btnSave.Name = "btnSave";
-            btnSave.Size = new Size(66, 29);
-            btnSave.TabIndex = 8;
+            btnSave.Size = new Size(110, 30);
+            btnSave.TabIndex = 9;
             btnSave.Text = "저장";
             btnSave.UseVisualStyleBackColor = false;
-            // 
-            // grpEditValue
-            // 
-            grpEditValue.Controls.Add(txtChangeAngle);
-            grpEditValue.Controls.Add(txtChangeThrottle);
-            grpEditValue.Controls.Add(lblChangeAngle);
-            grpEditValue.Controls.Add(lblChangeThrottle);
-            grpEditValue.Location = new Point(203, 445);
-            grpEditValue.Name = "grpEditValue";
-            grpEditValue.Size = new Size(310, 126);
-            grpEditValue.TabIndex = 9;
-            grpEditValue.TabStop = false;
-            grpEditValue.Text = "값 수정";
-            // 
-            // txtChangeAngle
-            // 
-            txtChangeAngle.Location = new Point(85, 80);
-            txtChangeAngle.Name = "txtChangeAngle";
-            txtChangeAngle.Size = new Size(196, 27);
-            txtChangeAngle.TabIndex = 3;
-            // 
-            // txtChangeThrottle
-            // 
-            txtChangeThrottle.Location = new Point(85, 43);
-            txtChangeThrottle.Name = "txtChangeThrottle";
-            txtChangeThrottle.Size = new Size(196, 27);
-            txtChangeThrottle.TabIndex = 2;
-            // 
-            // lblChangeAngle
-            // 
-            lblChangeAngle.AutoSize = true;
-            lblChangeAngle.Location = new Point(20, 80);
-            lblChangeAngle.Name = "lblChangeAngle";
-            lblChangeAngle.Size = new Size(47, 20);
-            lblChangeAngle.TabIndex = 1;
-            lblChangeAngle.Text = "angle";
-            // 
-            // lblChangeThrottle
-            // 
-            lblChangeThrottle.AutoSize = true;
-            lblChangeThrottle.Location = new Point(20, 43);
-            lblChangeThrottle.Name = "lblChangeThrottle";
-            lblChangeThrottle.Size = new Size(59, 20);
-            lblChangeThrottle.TabIndex = 0;
-            lblChangeThrottle.Text = "throttle";
+            btnSave.Click += btnSave_Click;
             // 
             // lblCurrentIndex
             // 
-            lblCurrentIndex.AutoSize = true;
-            lblCurrentIndex.Location = new Point(519, 67);
+            lblCurrentIndex.Location = new Point(12, 555);
             lblCurrentIndex.Name = "lblCurrentIndex";
-            lblCurrentIndex.Size = new Size(50, 20);
+            lblCurrentIndex.Size = new Size(506, 20);
             lblCurrentIndex.TabIndex = 10;
-            lblCurrentIndex.Text = "label1";
+            lblCurrentIndex.Text = "현재 인덱스: -";
             // 
-            // lblCurrentThrottle
+            // lblCurrentImage
             // 
-            lblCurrentThrottle.AutoSize = true;
-            lblCurrentThrottle.Location = new Point(519, 87);
-            lblCurrentThrottle.Name = "lblCurrentThrottle";
-            lblCurrentThrottle.Size = new Size(50, 20);
-            lblCurrentThrottle.TabIndex = 11;
-            lblCurrentThrottle.Text = "label1";
+            lblCurrentImage.AutoEllipsis = true;
+            lblCurrentImage.Location = new Point(12, 578);
+            lblCurrentImage.Name = "lblCurrentImage";
+            lblCurrentImage.Size = new Size(506, 20);
+            lblCurrentImage.TabIndex = 11;
+            lblCurrentImage.Text = "이미지: -";
             // 
-            // lblCurrentAngle
+            // lblCurrentMode
             // 
-            lblCurrentAngle.AutoSize = true;
-            lblCurrentAngle.Location = new Point(519, 107);
-            lblCurrentAngle.Name = "lblCurrentAngle";
-            lblCurrentAngle.Size = new Size(50, 20);
-            lblCurrentAngle.TabIndex = 12;
-            lblCurrentAngle.Text = "label1";
+            lblCurrentMode.AutoEllipsis = true;
+            lblCurrentMode.Location = new Point(12, 601);
+            lblCurrentMode.Name = "lblCurrentMode";
+            lblCurrentMode.Size = new Size(506, 20);
+            lblCurrentMode.TabIndex = 12;
+            lblCurrentMode.Text = "mode/catalog: -";
             // 
-            // btnUndo
+            // lblAngle
             // 
-            btnUndo.BackColor = Color.White;
-            btnUndo.ForeColor = Color.Black;
-            btnUndo.Location = new Point(296, 412);
-            btnUndo.Name = "btnUndo";
-            btnUndo.Size = new Size(78, 29);
-            btnUndo.TabIndex = 13;
-            btnUndo.Text = "되돌리기";
-            btnUndo.UseVisualStyleBackColor = false;
-            label1 = new Label();
-            label2 = new Label();
-            label3 = new Label();
-            label4 = new Label();
-            btnMember1 = new Button();
-            btnMember2 = new Button();
-            btnMember3 = new Button();
-            btnMember4 = new Button();
-            txtName = new TextBox();
-            txtSchool = new TextBox();
-            txtClass = new TextBox();
-            txtGGa = new TextBox();
-            label5 = new Label();
-            SuspendLayout();
+            lblAngle.Location = new Point(12, 627);
+            lblAngle.Name = "lblAngle";
+            lblAngle.Size = new Size(80, 20);
+            lblAngle.TabIndex = 13;
+            lblAngle.Text = "angle";
             // 
-            // label1
+            // txtAngle
             // 
-            label1.AutoSize = true;
-            label1.Font = new Font("맑은 고딕", 36F, FontStyle.Bold, GraphicsUnit.Point, 129);
-            label1.Location = new Point(31, 20);
-            label1.Margin = new Padding(4, 0, 4, 0);
-            label1.Name = "label1";
-            label1.Size = new Size(330, 81);
-            label1.TabIndex = 0;
-            label1.Text = "Team App";
+            txtAngle.Location = new Point(95, 624);
+            txtAngle.Name = "txtAngle";
+            txtAngle.Size = new Size(120, 23);
+            txtAngle.TabIndex = 14;
             // 
-            // label2
+            // lblThrottle
             // 
-            label2.AutoSize = true;
-            label2.Font = new Font("맑은 고딕", 27.75F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            label2.ForeColor = Color.Blue;
-            label2.Location = new Point(42, 127);
-            label2.Margin = new Padding(4, 0, 4, 0);
-            label2.Name = "label2";
-            label2.Size = new Size(121, 62);
-            label2.TabIndex = 1;
-            label2.Text = "이름";
+            lblThrottle.Location = new Point(235, 703);
+            lblThrottle.Name = "lblThrottle";
+            lblThrottle.Size = new Size(80, 20);
+            lblThrottle.TabIndex = 15;
+            lblThrottle.Text = "throttle";
             // 
-            // label3
+            // txtThrottle
             // 
-            label3.AutoSize = true;
-            label3.Font = new Font("맑은 고딕", 27.75F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            label3.ForeColor = Color.Blue;
-            label3.Location = new Point(42, 212);
-            label3.Margin = new Padding(4, 0, 4, 0);
-            label3.Name = "label3";
-            label3.Size = new Size(121, 62);
-            label3.TabIndex = 2;
-            label3.Text = "학교";
-            label3.Click += label3_Click;
+            txtThrottle.Location = new Point(315, 624);
+            txtThrottle.Name = "txtThrottle";
+            txtThrottle.Size = new Size(120, 23);
+            txtThrottle.TabIndex = 16;
             // 
-            // label4
+            // lblGraph
             // 
-            label4.AutoSize = true;
-            label4.Font = new Font("맑은 고딕", 27.75F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            label4.ForeColor = Color.Blue;
-            label4.Location = new Point(42, 300);
-            label4.Margin = new Padding(4, 0, 4, 0);
-            label4.Name = "label4";
-            label4.Size = new Size(121, 62);
-            label4.TabIndex = 3;
-            label4.Text = "학년";
+            lblGraph.Location = new Point(12, 730);
+            lblGraph.Name = "lblGraph";
+            lblGraph.Size = new Size(506, 20);
+            lblGraph.TabIndex = 17;
+            lblGraph.Text = "angle / throttle / 이동평균 / 이상 후보";
             // 
-            // btnMember1
+            // picGraph
             // 
-            btnMember1.Font = new Font("맑은 고딕", 20.25F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            btnMember1.Location = new Point(599, 132);
-            btnMember1.Margin = new Padding(4);
-            btnMember1.Name = "btnMember1";
-            btnMember1.Size = new Size(152, 63);
-            btnMember1.TabIndex = 4;
-            btnMember1.Text = "멤버1";
-            btnMember1.UseVisualStyleBackColor = true;
+            picGraph.BackColor = Color.White;
+            picGraph.BorderStyle = BorderStyle.FixedSingle;
+            picGraph.Location = new Point(12, 753);
+            picGraph.Name = "picGraph";
+            picGraph.Size = new Size(506, 65);
+            picGraph.TabIndex = 18;
+            picGraph.TabStop = false;
             // 
-            // btnMember2
+            // grpFilter
             // 
-            btnMember2.Font = new Font("맑은 고딕", 20.25F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            btnMember2.Location = new Point(599, 217);
-            btnMember2.Margin = new Padding(4);
-            btnMember2.Name = "btnMember2";
-            btnMember2.Size = new Size(152, 63);
-            btnMember2.TabIndex = 5;
-            btnMember2.Text = "멤버2";
-            btnMember2.UseVisualStyleBackColor = true;
+            grpFilter.Controls.Add(chkThrottlePositive);
+            grpFilter.Controls.Add(chkExcludeAngleZero);
+            grpFilter.Controls.Add(chkAngleRange);
+            grpFilter.Controls.Add(chkThrottleRange);
+            grpFilter.Controls.Add(chkAnomalyOnly);
+            grpFilter.Controls.Add(chkDeletedOnly);
+            grpFilter.Controls.Add(chkEditedOnly);
+            grpFilter.Controls.Add(lblRangeMin);
+            grpFilter.Controls.Add(lblRangeMax);
+            grpFilter.Controls.Add(numAngleMin);
+            grpFilter.Controls.Add(numAngleMax);
+            grpFilter.Controls.Add(numThrottleMin);
+            grpFilter.Controls.Add(numThrottleMax);
+            grpFilter.Controls.Add(btnApplyFilter);
+            grpFilter.Controls.Add(btnClearFilter);
+            grpFilter.Location = new Point(832, 52);
+            grpFilter.Name = "grpFilter";
+            grpFilter.Size = new Size(380, 285);
+            grpFilter.TabIndex = 5;
+            grpFilter.TabStop = false;
+            grpFilter.Text = "데이터 필터링";
             // 
-            // btnMember3
+            // chkThrottlePositive
             // 
-            btnMember3.Font = new Font("맑은 고딕", 20.25F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            btnMember3.Location = new Point(599, 305);
-            btnMember3.Margin = new Padding(4);
-            btnMember3.Name = "btnMember3";
-            btnMember3.Size = new Size(152, 63);
-            btnMember3.TabIndex = 6;
-            btnMember3.Text = "멤버3";
-            btnMember3.UseVisualStyleBackColor = true;
+            chkThrottlePositive.Location = new Point(14, 28);
+            chkThrottlePositive.Name = "chkThrottlePositive";
+            chkThrottlePositive.Size = new Size(180, 24);
+            chkThrottlePositive.TabIndex = 0;
+            chkThrottlePositive.Text = "throttle > 0만 표시";
+            chkThrottlePositive.UseVisualStyleBackColor = true;
             // 
-            // btnMember4
+            // chkExcludeAngleZero
             // 
-            btnMember4.Font = new Font("맑은 고딕", 20.25F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            btnMember4.Location = new Point(599, 393);
-            btnMember4.Margin = new Padding(4);
-            btnMember4.Name = "btnMember4";
-            btnMember4.Size = new Size(152, 63);
-            btnMember4.TabIndex = 7;
-            btnMember4.Text = "멤버4";
-            btnMember4.UseVisualStyleBackColor = true;
+            chkExcludeAngleZero.Location = new Point(14, 56);
+            chkExcludeAngleZero.Name = "chkExcludeAngleZero";
+            chkExcludeAngleZero.Size = new Size(110, 24);
+            chkExcludeAngleZero.TabIndex = 1;
+            chkExcludeAngleZero.Text = "angle=0 제외";
+            chkExcludeAngleZero.UseVisualStyleBackColor = true;
             // 
-            // txtName
+            // chkAngleRange
             // 
-            txtName.Font = new Font("맑은 고딕", 24F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            txtName.Location = new Point(183, 127);
-            txtName.Margin = new Padding(4);
-            txtName.Name = "txtName";
-            txtName.Size = new Size(359, 61);
-            txtName.TabIndex = 8;
+            chkAngleRange.Location = new Point(14, 90);
+            chkAngleRange.Name = "chkAngleRange";
+            chkAngleRange.Size = new Size(100, 24);
+            chkAngleRange.TabIndex = 2;
+            chkAngleRange.Text = "angle 범위";
+            chkAngleRange.UseVisualStyleBackColor = true;
             // 
-            // txtSchool
+            // chkThrottleRange
             // 
-            txtSchool.Font = new Font("맑은 고딕", 24F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            txtSchool.Location = new Point(183, 215);
-            txtSchool.Margin = new Padding(4);
-            txtSchool.Name = "txtSchool";
-            txtSchool.Size = new Size(359, 61);
-            txtSchool.TabIndex = 9;
+            chkThrottleRange.Location = new Point(14, 124);
+            chkThrottleRange.Name = "chkThrottleRange";
+            chkThrottleRange.Size = new Size(110, 24);
+            chkThrottleRange.TabIndex = 3;
+            chkThrottleRange.Text = "throttle 범위";
+            chkThrottleRange.UseVisualStyleBackColor = true;
             // 
-            // txtClass
+            // chkAnomalyOnly
             // 
-            txtClass.Font = new Font("맑은 고딕", 24F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            txtClass.Location = new Point(183, 307);
-            txtClass.Margin = new Padding(4);
-            txtClass.Name = "txtClass";
-            txtClass.Size = new Size(359, 61);
-            txtClass.TabIndex = 10;
+            chkAnomalyOnly.Location = new Point(14, 156);
+            chkAnomalyOnly.Name = "chkAnomalyOnly";
+            chkAnomalyOnly.Size = new Size(170, 24);
+            chkAnomalyOnly.TabIndex = 4;
+            chkAnomalyOnly.Text = "이상 후보만 표시";
+            chkAnomalyOnly.UseVisualStyleBackColor = true;
             // 
-            // txtGGa
+            // chkDeletedOnly
             // 
-            txtGGa.Font = new Font("맑은 고딕", 24F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            txtGGa.Location = new Point(183, 395);
-            txtGGa.Margin = new Padding(4);
-            txtGGa.Name = "txtGGa";
-            txtGGa.Size = new Size(359, 61);
-            txtGGa.TabIndex = 11;
+            chkDeletedOnly.Location = new Point(14, 186);
+            chkDeletedOnly.Name = "chkDeletedOnly";
+            chkDeletedOnly.Size = new Size(150, 24);
+            chkDeletedOnly.TabIndex = 13;
+            chkDeletedOnly.Text = "삭제 이미지만";
+            chkDeletedOnly.UseVisualStyleBackColor = true;
             // 
-            // label5
+            // chkEditedOnly
             // 
-            label5.AutoSize = true;
-            label5.Font = new Font("맑은 고딕", 27.75F, FontStyle.Regular, GraphicsUnit.Point, 129);
-            label5.ForeColor = Color.Blue;
-            label5.Location = new Point(42, 388);
-            label5.Margin = new Padding(4, 0, 4, 0);
-            label5.Name = "label5";
-            label5.Size = new Size(121, 62);
-            label5.TabIndex = 12;
-            label5.Text = "학과";
+            chkEditedOnly.Location = new Point(14, 216);
+            chkEditedOnly.Name = "chkEditedOnly";
+            chkEditedOnly.Size = new Size(150, 24);
+            chkEditedOnly.TabIndex = 14;
+            chkEditedOnly.Text = "교체/편집만";
+            chkEditedOnly.UseVisualStyleBackColor = true;
+            // 
+            // lblRangeMin
+            // 
+            lblRangeMin.Location = new Point(130, 72);
+            lblRangeMin.Name = "lblRangeMin";
+            lblRangeMin.Size = new Size(50, 18);
+            lblRangeMin.TabIndex = 5;
+            lblRangeMin.Text = "최소";
+            // 
+            // lblRangeMax
+            // 
+            lblRangeMax.Location = new Point(250, 72);
+            lblRangeMax.Name = "lblRangeMax";
+            lblRangeMax.Size = new Size(50, 18);
+            lblRangeMax.TabIndex = 6;
+            lblRangeMax.Text = "최대";
+            // 
+            // numAngleMin
+            // 
+            numAngleMin.DecimalPlaces = 3;
+            numAngleMin.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numAngleMin.Location = new Point(130, 90);
+            numAngleMin.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numAngleMin.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
+            numAngleMin.Name = "numAngleMin";
+            numAngleMin.Size = new Size(100, 23);
+            numAngleMin.TabIndex = 7;
+            numAngleMin.Value = new decimal(new int[] { 1, 0, 0, int.MinValue });
+            // 
+            // numAngleMax
+            // 
+            numAngleMax.DecimalPlaces = 3;
+            numAngleMax.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numAngleMax.Location = new Point(250, 90);
+            numAngleMax.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numAngleMax.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
+            numAngleMax.Name = "numAngleMax";
+            numAngleMax.Size = new Size(100, 23);
+            numAngleMax.TabIndex = 8;
+            numAngleMax.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            // 
+            // numThrottleMin
+            // 
+            numThrottleMin.DecimalPlaces = 3;
+            numThrottleMin.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numThrottleMin.Location = new Point(130, 124);
+            numThrottleMin.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numThrottleMin.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
+            numThrottleMin.Name = "numThrottleMin";
+            numThrottleMin.Size = new Size(100, 23);
+            numThrottleMin.TabIndex = 9;
+            // 
+            // numThrottleMax
+            // 
+            numThrottleMax.DecimalPlaces = 3;
+            numThrottleMax.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numThrottleMax.Location = new Point(250, 124);
+            numThrottleMax.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numThrottleMax.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
+            numThrottleMax.Name = "numThrottleMax";
+            numThrottleMax.Size = new Size(100, 23);
+            numThrottleMax.TabIndex = 10;
+            numThrottleMax.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            // 
+            // btnApplyFilter
+            // 
+            btnApplyFilter.Location = new Point(14, 245);
+            btnApplyFilter.Name = "btnApplyFilter";
+            btnApplyFilter.Size = new Size(110, 30);
+            btnApplyFilter.TabIndex = 11;
+            btnApplyFilter.Text = "필터 적용";
+            btnApplyFilter.UseVisualStyleBackColor = true;
+            btnApplyFilter.Click += btnApplyFilter_Click;
+            // 
+            // btnClearFilter
+            // 
+            btnClearFilter.Location = new Point(132, 245);
+            btnClearFilter.Name = "btnClearFilter";
+            btnClearFilter.Size = new Size(120, 30);
+            btnClearFilter.TabIndex = 12;
+            btnClearFilter.Text = "필터 초기화";
+            btnClearFilter.UseVisualStyleBackColor = true;
+            btnClearFilter.Click += btnClearFilter_Click;
+            // 
+            // grpAnomaly
+            // 
+            grpAnomaly.Controls.Add(lblAnomalyWindow);
+            grpAnomaly.Controls.Add(numAnomalyWindow);
+            grpAnomaly.Controls.Add(lblAnomalySigma);
+            grpAnomaly.Controls.Add(numAnomalySigma);
+            grpAnomaly.Controls.Add(btnAnalyzeAnomaly);
+            grpAnomaly.Controls.Add(btnClearAnomaly);
+            grpAnomaly.Controls.Add(btnNextAnomaly);
+            grpAnomaly.Controls.Add(lblAnomalyStatus);
+            grpAnomaly.Controls.Add(lblAnomalyHint);
+            grpAnomaly.Location = new Point(832, 342);
+            grpAnomaly.Name = "grpAnomaly";
+            grpAnomaly.Size = new Size(380, 188);
+            grpAnomaly.TabIndex = 6;
+            grpAnomaly.TabStop = false;
+            grpAnomaly.Text = "이상 주행 자동 탐지";
+            // 
+            // lblAnomalyWindow
+            // 
+            lblAnomalyWindow.Location = new Point(14, 28);
+            lblAnomalyWindow.Name = "lblAnomalyWindow";
+            lblAnomalyWindow.Size = new Size(120, 20);
+            lblAnomalyWindow.TabIndex = 0;
+            lblAnomalyWindow.Text = "이동평균 window";
+            // 
+            // numAnomalyWindow
+            // 
+            numAnomalyWindow.Location = new Point(140, 26);
+            numAnomalyWindow.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
+            numAnomalyWindow.Minimum = new decimal(new int[] { 2, 0, 0, 0 });
+            numAnomalyWindow.Name = "numAnomalyWindow";
+            numAnomalyWindow.Size = new Size(80, 23);
+            numAnomalyWindow.TabIndex = 1;
+            numAnomalyWindow.Value = new decimal(new int[] { 15, 0, 0, 0 });
+            // 
+            // lblAnomalySigma
+            // 
+            lblAnomalySigma.Location = new Point(230, 28);
+            lblAnomalySigma.Name = "lblAnomalySigma";
+            lblAnomalySigma.Size = new Size(60, 20);
+            lblAnomalySigma.TabIndex = 2;
+            lblAnomalySigma.Text = "σ 배수";
+            // 
+            // numAnomalySigma
+            // 
+            numAnomalySigma.DecimalPlaces = 1;
+            numAnomalySigma.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numAnomalySigma.Location = new Point(292, 26);
+            numAnomalySigma.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numAnomalySigma.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
+            numAnomalySigma.Name = "numAnomalySigma";
+            numAnomalySigma.Size = new Size(65, 23);
+            numAnomalySigma.TabIndex = 3;
+            numAnomalySigma.Value = new decimal(new int[] { 25, 0, 0, 65536 });
+            // 
+            // btnAnalyzeAnomaly
+            // 
+            btnAnalyzeAnomaly.Location = new Point(14, 62);
+            btnAnalyzeAnomaly.Name = "btnAnalyzeAnomaly";
+            btnAnalyzeAnomaly.Size = new Size(120, 30);
+            btnAnalyzeAnomaly.TabIndex = 4;
+            btnAnalyzeAnomaly.Text = "이상 탐지 실행";
+            btnAnalyzeAnomaly.UseVisualStyleBackColor = true;
+            btnAnalyzeAnomaly.Click += btnAnalyzeAnomaly_Click;
+            // 
+            // btnClearAnomaly
+            // 
+            btnClearAnomaly.Location = new Point(144, 62);
+            btnClearAnomaly.Name = "btnClearAnomaly";
+            btnClearAnomaly.Size = new Size(110, 30);
+            btnClearAnomaly.TabIndex = 5;
+            btnClearAnomaly.Text = "탐지 초기화";
+            btnClearAnomaly.UseVisualStyleBackColor = true;
+            btnClearAnomaly.Click += btnClearAnomaly_Click;
+            // 
+            // btnNextAnomaly
+            // 
+            btnNextAnomaly.Location = new Point(264, 62);
+            btnNextAnomaly.Name = "btnNextAnomaly";
+            btnNextAnomaly.Size = new Size(92, 30);
+            btnNextAnomaly.TabIndex = 6;
+            btnNextAnomaly.Text = "다음 이상";
+            btnNextAnomaly.UseVisualStyleBackColor = true;
+            btnNextAnomaly.Click += btnNextAnomaly_Click;
+            // 
+            // lblAnomalyStatus
+            // 
+            lblAnomalyStatus.Location = new Point(14, 104);
+            lblAnomalyStatus.Name = "lblAnomalyStatus";
+            lblAnomalyStatus.Size = new Size(350, 22);
+            lblAnomalyStatus.TabIndex = 6;
+            lblAnomalyStatus.Text = "이상 탐지 전";
+            // 
+            // lblAnomalyHint
+            // 
+            lblAnomalyHint.Location = new Point(14, 130);
+            lblAnomalyHint.Name = "lblAnomalyHint";
+            lblAnomalyHint.Size = new Size(350, 52);
+            lblAnomalyHint.TabIndex = 7;
+            lblAnomalyHint.Text = "조향각 이동평균·변동성 밴드를 벗어난 프레임을 목록/그래프/타임라인에 빨간색으로 표시합니다.";
+            // 
+            // grpTrain
+            // 
+            grpTrain.Controls.Add(lblCommand);
+            grpTrain.Controls.Add(chkManualCommandEdit);
+            grpTrain.Controls.Add(txtTrainCommand);
+            grpTrain.Controls.Add(btnTrainingPaths);
+            grpTrain.Controls.Add(btnTrain);
+            grpTrain.Controls.Add(lblHint);
+            grpTrain.Location = new Point(832, 552);
+            grpTrain.Name = "grpTrain";
+            grpTrain.Size = new Size(380, 210);
+            grpTrain.TabIndex = 7;
+            grpTrain.TabStop = false;
+            grpTrain.Text = "AI 학습 실행(C# -> Python/DonkeyCar)";
+            // 
+            // lblCommand
+            // 
+            lblCommand.Location = new Point(14, 25);
+            lblCommand.Name = "lblCommand";
+            lblCommand.Size = new Size(100, 20);
+            lblCommand.TabIndex = 0;
+            lblCommand.Text = "학습 명령";
+            // 
+            // chkManualCommandEdit
+            // 
+            chkManualCommandEdit.Location = new Point(250, 23);
+            chkManualCommandEdit.Name = "chkManualCommandEdit";
+            chkManualCommandEdit.Size = new Size(115, 24);
+            chkManualCommandEdit.TabIndex = 1;
+            chkManualCommandEdit.Text = "수동 편집";
+            chkManualCommandEdit.UseVisualStyleBackColor = true;
+            chkManualCommandEdit.CheckedChanged += chkManualCommandEdit_CheckedChanged;
+            // 
+            // txtTrainCommand
+            // 
+            txtTrainCommand.Location = new Point(14, 48);
+            txtTrainCommand.Multiline = true;
+            txtTrainCommand.Name = "txtTrainCommand";
+            txtTrainCommand.ReadOnly = true;
+            txtTrainCommand.ScrollBars = ScrollBars.Vertical;
+            txtTrainCommand.Size = new Size(350, 58);
+            txtTrainCommand.TabIndex = 1;
+            txtTrainCommand.Text = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
+            // 
+            // btnTrainingPaths
+            // 
+            btnTrainingPaths.Location = new Point(14, 114);
+            btnTrainingPaths.Name = "btnTrainingPaths";
+            btnTrainingPaths.Size = new Size(132, 30);
+            btnTrainingPaths.TabIndex = 4;
+            btnTrainingPaths.Text = "학습 명령 생성";
+            btnTrainingPaths.UseVisualStyleBackColor = true;
+            btnTrainingPaths.Click += btnTrainingPaths_Click;
+            // 
+            // btnTrain
+            // 
+            btnTrain.Location = new Point(154, 114);
+            btnTrain.Name = "btnTrain";
+            btnTrain.Size = new Size(104, 30);
+            btnTrain.TabIndex = 2;
+            btnTrain.Text = "학습 실행";
+            btnTrain.UseVisualStyleBackColor = true;
+            btnTrain.Click += btnTrain_Click;
+            // 
+            // lblHint
+            // 
+            lblHint.Location = new Point(14, 150);
+            lblHint.Name = "lblHint";
+            lblHint.Size = new Size(350, 44);
+            lblHint.TabIndex = 5;
+            lblHint.Text = "먼저 [학습 명령 생성]을 눌러 환경/경로를 확정하세요. 수동 편집은 체크 후 가능합니다.";
+            // 
+            // btnCheckDonkey
+            // 
+            btnCheckDonkey.Location = new Point(0, 0);
+            btnCheckDonkey.Name = "btnCheckDonkey";
+            btnCheckDonkey.Size = new Size(1, 1);
+            btnCheckDonkey.TabIndex = 3;
+            btnCheckDonkey.UseVisualStyleBackColor = true;
+            btnCheckDonkey.Visible = false;
+            btnCheckDonkey.Click += btnCheckDonkey_Click;
+            // 
+            // grpLog
+            // 
+            grpLog.Controls.Add(txtLog);
+            grpLog.Location = new Point(832, 752);
+            grpLog.Name = "grpLog";
+            grpLog.Size = new Size(380, 127);
+            grpLog.TabIndex = 8;
+            grpLog.TabStop = false;
+            grpLog.Text = "실행 로그";
+            // 
+            // txtLog
+            // 
+            txtLog.Location = new Point(10, 22);
+            txtLog.Multiline = true;
+            txtLog.Name = "txtLog";
+            txtLog.ReadOnly = true;
+            txtLog.ScrollBars = ScrollBars.Vertical;
+            txtLog.Size = new Size(360, 115);
+            txtLog.TabIndex = 0;
             // 
             // Form1
             // 
-            AutoScaleDimensions = new SizeF(9F, 20F);
+            AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(837, 592);
-            Controls.Add(btnUndo);
-            Controls.Add(lblCurrentAngle);
-            Controls.Add(lblCurrentThrottle);
-            Controls.Add(lblCurrentIndex);
-            Controls.Add(grpEditValue);
-            Controls.Add(btnSave);
-            Controls.Add(btnDelete);
-            Controls.Add(btnAfter);
-            Controls.Add(btnBefore);
-            Controls.Add(trbChangeIndex);
-            Controls.Add(picCurrentIndexImage);
+            AutoScroll = true;
+            BackColor = Color.FromArgb(248, 248, 248);
+            ClientSize = new Size(1224, 821);
+            Controls.Add(btnOpenFolder);
             Controls.Add(txtSelectedFolder);
-            Controls.Add(lstIndexList);
-            Controls.Add(btnSelectFolder);
-            ClientSize = new Size(786, 511);
-            Controls.Add(label5);
-            Controls.Add(txtGGa);
-            Controls.Add(txtClass);
-            Controls.Add(txtSchool);
-            Controls.Add(txtName);
-            Controls.Add(btnMember4);
-            Controls.Add(btnMember3);
-            Controls.Add(btnMember2);
-            Controls.Add(btnMember1);
-            Controls.Add(label4);
-            Controls.Add(label3);
-            Controls.Add(label2);
-            Controls.Add(label1);
-            Margin = new Padding(4);
+            Controls.Add(btnOpenDataFolder);
+            Controls.Add(grpList);
+            Controls.Add(grpPreview);
+            Controls.Add(grpFilter);
+            Controls.Add(grpAnomaly);
+            Controls.Add(grpTrain);
+            Controls.Add(grpLog);
+            Font = new Font("맑은 고딕", 9F, FontStyle.Regular, GraphicsUnit.Point, 129);
+            MinimumSize = new Size(980, 650);
             Name = "Form1";
-            Text = "Form1";
-            ((System.ComponentModel.ISupportInitialize)picCurrentIndexImage).EndInit();
-            ((System.ComponentModel.ISupportInitialize)trbChangeIndex).EndInit();
-            grpEditValue.ResumeLayout(false);
-            grpEditValue.PerformLayout();
+            Text = "DonkeyCar UI 데이터 관리 도구";
+            grpList.ResumeLayout(false);
+            grpPreview.ResumeLayout(false);
+            grpPreview.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)picFrame).EndInit();
+            grpImageEdit.ResumeLayout(false);
+            grpDeleteOps.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)trbFrame).EndInit();
+            ((System.ComponentModel.ISupportInitialize)trbPlaySpeed).EndInit();
+            ((System.ComponentModel.ISupportInitialize)picGraph).EndInit();
+            grpFilter.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)numAngleMin).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numAngleMax).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numThrottleMin).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numThrottleMax).EndInit();
+            grpAnomaly.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)numAnomalyWindow).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numAnomalySigma).EndInit();
+            grpTrain.ResumeLayout(false);
+            grpTrain.PerformLayout();
+            grpLog.ResumeLayout(false);
+            grpLog.PerformLayout();
             ResumeLayout(false);
             PerformLayout();
         }
 
         #endregion
 
-        private Button btnSelectFolder;
-        private ListBox lstIndexList;
-        private TextBox txtSelectedFolder;
-        private PictureBox picCurrentIndexImage;
-        private TrackBar trbChangeIndex;
-        private Button btnBefore;
-        private Button btnAfter;
-        private Button btnDelete;
-        private Button btnSave;
-        private GroupBox grpEditValue;
-        private TextBox txtChangeAngle;
-        private TextBox txtChangeThrottle;
-        private Label lblChangeAngle;
-        private Label lblChangeThrottle;
-        private Label lblCurrentIndex;
-        private Label lblCurrentThrottle;
-        private Label lblCurrentAngle;
-        private Button btnUndo;
-        private Label label1;
-        private Label label2;
-        private Label label3;
-        private Label label4;
-        private Button btnMember1;
-        private Button btnMember2;
-        private Button btnMember3;
-        private Button btnMember4;
-        private TextBox txtName;
-        private TextBox txtSchool;
-        private TextBox txtClass;
-        private TextBox txtGGa;
-        private Label label5;
+        private System.Windows.Forms.Button btnOpenFolder = null!;
+        private System.Windows.Forms.Button btnOpenDataFolder = null!;
+        private System.Windows.Forms.TextBox txtSelectedFolder = null!;
+        private System.Windows.Forms.GroupBox grpList = null!;
+        private TeamApp.ColoredCheckedListBox lstFrames = null!;
+        private System.Windows.Forms.Button btnCheckAllFrames = null!;
+        private System.Windows.Forms.Button btnClearCheckedFrames = null!;
+        private System.Windows.Forms.Label lblStats = null!;
+        private System.Windows.Forms.GroupBox grpPreview = null!;
+        private System.Windows.Forms.PictureBox picFrame = null!;
+        private System.Windows.Forms.GroupBox grpImageEdit = null!;
+        private System.Windows.Forms.Label lblEditHint = null!;
+        private System.Windows.Forms.ComboBox cmbMaskMode = null!;
+        private System.Windows.Forms.Button btnMaskRegion = null!;
+        private System.Windows.Forms.Button btnReplaceRegion = null!;
+        private System.Windows.Forms.Button btnClearSelection = null!;
+        private System.Windows.Forms.Button btnRestoreImage = null!;
+        private System.Windows.Forms.GroupBox grpDeleteOps = null!;
+        private System.Windows.Forms.Panel pnlTimeline = null!;
+        private System.Windows.Forms.TrackBar trbFrame = null!;
+        private System.Windows.Forms.Button btnPrev = null!;
+        private System.Windows.Forms.Button btnNext = null!;
+        private System.Windows.Forms.Button btnPlay = null!;
+        private System.Windows.Forms.Label lblPlaySpeed = null!;
+        private System.Windows.Forms.TrackBar trbPlaySpeed = null!;
+        private System.Windows.Forms.Button btnSave = null!;
+        private System.Windows.Forms.Button btnDelete = null!;
+        private System.Windows.Forms.Button btnUndo = null!;
+        private System.Windows.Forms.TextBox txtAngle = null!;
+        private System.Windows.Forms.TextBox txtThrottle = null!;
+        private System.Windows.Forms.Label lblCurrentIndex = null!;
+        private System.Windows.Forms.Label lblCurrentImage = null!;
+        private System.Windows.Forms.Label lblCurrentMode = null!;
+        private System.Windows.Forms.Label lblAngle = null!;
+        private System.Windows.Forms.Label lblThrottle = null!;
+        private System.Windows.Forms.Label lblGraph = null!;
+        private System.Windows.Forms.PictureBox picGraph = null!;
+        private System.Windows.Forms.GroupBox grpFilter = null!;
+        private System.Windows.Forms.CheckBox chkThrottlePositive = null!;
+        private System.Windows.Forms.CheckBox chkExcludeAngleZero = null!;
+        private System.Windows.Forms.CheckBox chkAngleRange = null!;
+        private System.Windows.Forms.CheckBox chkThrottleRange = null!;
+        private System.Windows.Forms.CheckBox chkAnomalyOnly = null!;
+        private System.Windows.Forms.CheckBox chkDeletedOnly = null!;
+        private System.Windows.Forms.CheckBox chkEditedOnly = null!;
+        private System.Windows.Forms.Label lblRangeMin = null!;
+        private System.Windows.Forms.Label lblRangeMax = null!;
+        private System.Windows.Forms.NumericUpDown numAngleMin = null!;
+        private System.Windows.Forms.NumericUpDown numAngleMax = null!;
+        private System.Windows.Forms.NumericUpDown numThrottleMin = null!;
+        private System.Windows.Forms.NumericUpDown numThrottleMax = null!;
+        private System.Windows.Forms.Button btnApplyFilter = null!;
+        private System.Windows.Forms.Button btnClearFilter = null!;
+        private System.Windows.Forms.GroupBox grpAnomaly = null!;
+        private System.Windows.Forms.Label lblAnomalyWindow = null!;
+        private System.Windows.Forms.NumericUpDown numAnomalyWindow = null!;
+        private System.Windows.Forms.Label lblAnomalySigma = null!;
+        private System.Windows.Forms.NumericUpDown numAnomalySigma = null!;
+        private System.Windows.Forms.Button btnAnalyzeAnomaly = null!;
+        private System.Windows.Forms.Button btnClearAnomaly = null!;
+        private System.Windows.Forms.Button btnNextAnomaly = null!;
+        private System.Windows.Forms.Label lblAnomalyStatus = null!;
+        private System.Windows.Forms.Label lblAnomalyHint = null!;
+        private System.Windows.Forms.GroupBox grpTrain = null!;
+        private System.Windows.Forms.Label lblCommand = null!;
+        private System.Windows.Forms.TextBox txtTrainCommand = null!;
+        private System.Windows.Forms.Button btnTrain = null!;
+        private System.Windows.Forms.Button btnCheckDonkey = null!;
+        private System.Windows.Forms.Button btnTrainingPaths = null!;
+        private System.Windows.Forms.CheckBox chkManualCommandEdit = null!;
+        private System.Windows.Forms.Label lblHint = null!;
+        private System.Windows.Forms.GroupBox grpLog = null!;
+        private System.Windows.Forms.TextBox txtLog = null!;
     }
 }
