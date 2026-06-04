@@ -104,6 +104,7 @@ namespace TeamApp
             btnCheckDonkey = new Button();
             grpLog = new GroupBox();
             txtLog = new TextBox();
+            btnCanny = new Button();
             grpList.SuspendLayout();
             grpPreview.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
@@ -254,6 +255,7 @@ namespace TeamApp
             // 
             // grpImageEdit
             // 
+            grpImageEdit.Controls.Add(btnCanny);
             grpImageEdit.Controls.Add(lblEditHint);
             grpImageEdit.Controls.Add(cmbMaskMode);
             grpImageEdit.Controls.Add(btnMaskRegion);
@@ -272,7 +274,7 @@ namespace TeamApp
             lblEditHint.AutoEllipsis = true;
             lblEditHint.Location = new Point(10, 20);
             lblEditHint.Name = "lblEditHint";
-            lblEditHint.Size = new Size(490, 18);
+            lblEditHint.Size = new Size(360, 18);
             lblEditHint.TabIndex = 0;
             lblEditHint.Text = "이미지 위에서 마우스로 드래그해 영역을 선택한 뒤 편집 버튼을 누르세요.";
             // 
@@ -889,6 +891,16 @@ namespace TeamApp
             txtLog.Size = new Size(360, 115);
             txtLog.TabIndex = 0;
             // 
+            // btnCanny
+            // 
+            btnCanny.Location = new Point(382, 16);
+            btnCanny.Name = "btnCanny";
+            btnCanny.Size = new Size(92, 23);
+            btnCanny.TabIndex = 6;
+            btnCanny.Text = "캐니에지";
+            btnCanny.UseVisualStyleBackColor = true;
+            btnCanny.Click += btnCanny_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -1009,5 +1021,6 @@ namespace TeamApp
         private System.Windows.Forms.Label lblHint = null!;
         private System.Windows.Forms.GroupBox grpLog = null!;
         private System.Windows.Forms.TextBox txtLog = null!;
+        private Button btnCanny;
     }
 }
