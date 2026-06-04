@@ -11,10 +11,11 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.VisualStyles;
+using VisualCheckBoxState = System.Windows.Forms.VisualStyles.CheckBoxState;
 
 namespace TeamApp
 {
@@ -22,7 +23,8 @@ namespace TeamApp
     {
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = false
+            WriteIndented = false,
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
         };
 
         private readonly List<FrameRecord> allFrames = new List<FrameRecord>();
@@ -40,6 +42,11 @@ namespace TeamApp
         private const string TrainingCommandPlaceholder = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
         private const string SshPasswordPlaceholder = "{SSH_PASSWORD}";
         private readonly HashSet<int> checkedFrameOrders = new HashSet<int>();
+        private readonly Label lblFrameSearch = new Label();
+        private readonly TextBox txtFrameSearch = new TextBox();
+        private readonly Button btnClearFrameSearch = new Button();
+        private Form2? activeTrainingForm;
+        private bool isUpdatingFrameList;
         private int currentVisibleIndex = -1;
 
         private string loadedImagePath = string.Empty;
@@ -79,6 +86,8 @@ namespace TeamApp
             chkDeletedOnly.Text = "삭제 이미지만";
             chkEditedOnly.Text = "교체/편집만";
             btnCheckDonkey.Visible = false;
+            InitializeFrameSearchControls();
+            lstFrames.ItemCheck += lstFrames_ItemCheck;
             grpTrain.Text = "AI 학습";
             lblCommand.Visible = false;
             chkManualCommandEdit.Visible = false;
@@ -103,6 +112,36 @@ namespace TeamApp
             ApplyResponsiveLayout();
             DrawTimeline();
             UpdateSelectionLabel();
+        }
+
+        private void InitializeFrameSearchControls()
+        {
+            lblFrameSearch.Text = "사진 검색";
+            lblFrameSearch.AutoSize = false;
+            txtFrameSearch.PlaceholderText = "이미지 파일명/번호 검색";
+            btnClearFrameSearch.Text = "지우기";
+
+            txtFrameSearch.TextChanged += (_, _) => ApplyFilters(CurrentRecord()?.GlobalOrder);
+            btnClearFrameSearch.Click += (_, _) =>
+            {
+                if (txtFrameSearch.TextLength > 0)
+                {
+                    txtFrameSearch.Clear();
+                }
+            };
+
+            if (!grpList.Controls.Contains(lblFrameSearch))
+            {
+                grpList.Controls.Add(lblFrameSearch);
+            }
+            if (!grpList.Controls.Contains(txtFrameSearch))
+            {
+                grpList.Controls.Add(txtFrameSearch);
+            }
+            if (!grpList.Controls.Contains(btnClearFrameSearch))
+            {
+                grpList.Controls.Add(btnClearFrameSearch);
+            }
         }
 
         private void ApplyResponsiveLayout()
@@ -165,7 +204,12 @@ namespace TeamApp
             var selectionButtonWidth = Math.Max(96, (w - 28) / 2);
             btnCheckAllFrames.SetBounds(10, 24, selectionButtonWidth, 28);
             btnClearCheckedFrames.SetBounds(btnCheckAllFrames.Right + 8, 24, selectionButtonWidth, 28);
-            lstFrames.SetBounds(10, 58, Math.Max(120, w - 20), Math.Max(140, h - 150));
+
+            lblFrameSearch.SetBounds(10, 60, 66, 20);
+            btnClearFrameSearch.SetBounds(Math.Max(180, w - 70), 56, 60, 26);
+            txtFrameSearch.SetBounds(80, 56, Math.Max(80, btnClearFrameSearch.Left - 86), 26);
+
+            lstFrames.SetBounds(10, 90, Math.Max(120, w - 20), Math.Max(120, h - 182));
             lblStats.SetBounds(10, lstFrames.Bottom + 8, Math.Max(120, w - 20), Math.Max(56, h - lstFrames.Bottom - 14));
             UpdateFrameListHorizontalExtent();
         }
@@ -656,13 +700,21 @@ namespace TeamApp
             visibleFrames.Clear();
             visibleFrames.AddRange(allFrames.Where(PassesFilter).OrderBy(record => record.GlobalOrder));
 
+            isUpdatingFrameList = true;
             lstFrames.BeginUpdate();
-            lstFrames.Items.Clear();
-            foreach (var record in visibleFrames)
+            try
             {
-                lstFrames.Items.Add(ToListText(record), checkedFrameOrders.Contains(record.GlobalOrder));
+                lstFrames.Items.Clear();
+                foreach (var record in visibleFrames)
+                {
+                    lstFrames.Items.Add(ToListText(record), checkedFrameOrders.Contains(record.GlobalOrder));
+                }
             }
-            lstFrames.EndUpdate();
+            finally
+            {
+                lstFrames.EndUpdate();
+                isUpdatingFrameList = false;
+            }
             UpdateFrameListHorizontalExtent();
             lstFrames.Invalidate();
             lstFrames.Refresh();
@@ -705,6 +757,11 @@ namespace TeamApp
                 {
                     return false;
                 }
+            }
+
+            if (!MatchesFrameSearch(record))
+            {
+                return false;
             }
 
             if (chkAnomalyOnly.Checked && !record.IsAnomaly)
@@ -755,6 +812,27 @@ namespace TeamApp
             return true;
         }
 
+        private bool MatchesFrameSearch(FrameRecord record)
+        {
+            var query = txtFrameSearch.Text.Trim();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return true;
+            }
+
+            return ContainsIgnoreCase(record.ImageFile, query) ||
+                   ContainsIgnoreCase(Path.GetFileName(record.ImageFile), query) ||
+                   ContainsIgnoreCase(record.CatalogPath, query) ||
+                   record.Index.ToString(CultureInfo.InvariantCulture).Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   record.GlobalOrder.ToString(CultureInfo.InvariantCulture).Contains(query, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsIgnoreCase(string? value, string query)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                   value.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private void btnClearFilter_Click(object? sender, EventArgs e)
         {
             chkThrottlePositive.Checked = false;
@@ -779,6 +857,24 @@ namespace TeamApp
         private void chkStatusFilter_CheckedChanged(object? sender, EventArgs e)
         {
             ApplyFilters(CurrentRecord()?.GlobalOrder);
+        }
+
+        private void lstFrames_ItemCheck(object? sender, ItemCheckEventArgs e)
+        {
+            if (isUpdatingFrameList || e.Index < 0 || e.Index >= visibleFrames.Count)
+            {
+                return;
+            }
+
+            var order = visibleFrames[e.Index].GlobalOrder;
+            if (e.NewValue == CheckState.Checked)
+            {
+                checkedFrameOrders.Add(order);
+            }
+            else
+            {
+                checkedFrameOrders.Remove(order);
+            }
         }
 
         private void PreserveCheckedOrders()
@@ -819,23 +915,41 @@ namespace TeamApp
 
         private void btnCheckAllFrames_Click(object? sender, EventArgs e)
         {
-            for (var i = 0; i < lstFrames.Items.Count; i++)
+            isUpdatingFrameList = true;
+            try
             {
-                lstFrames.SetItemChecked(i, true);
-                if (i < visibleFrames.Count)
+                for (var i = 0; i < lstFrames.Items.Count; i++)
                 {
-                    checkedFrameOrders.Add(visibleFrames[i].GlobalOrder);
+                    lstFrames.SetItemChecked(i, true);
+                    if (i < visibleFrames.Count)
+                    {
+                        checkedFrameOrders.Add(visibleFrames[i].GlobalOrder);
+                    }
                 }
             }
+            finally
+            {
+                isUpdatingFrameList = false;
+            }
+            lstFrames.Invalidate();
         }
 
         private void btnClearCheckedFrames_Click(object? sender, EventArgs e)
         {
-            for (var i = 0; i < lstFrames.Items.Count; i++)
+            isUpdatingFrameList = true;
+            try
             {
-                lstFrames.SetItemChecked(i, false);
+                for (var i = 0; i < lstFrames.Items.Count; i++)
+                {
+                    lstFrames.SetItemChecked(i, false);
+                }
+                checkedFrameOrders.Clear();
             }
-            checkedFrameOrders.Clear();
+            finally
+            {
+                isUpdatingFrameList = false;
+            }
+            lstFrames.Invalidate();
         }
 
         private void UpdateFrameListHorizontalExtent()
@@ -892,7 +1006,7 @@ namespace TeamApp
             }
 
             var isChecked = lstFrames.GetItemChecked(e.Index);
-            var checkState = isChecked ? CheckBoxState.CheckedNormal : CheckBoxState.UncheckedNormal;
+            var checkState = isChecked ? VisualCheckBoxState.CheckedNormal : VisualCheckBoxState.UncheckedNormal;
             CheckBoxRenderer.DrawCheckBox(e.Graphics, new Point(e.Bounds.Left + 3, e.Bounds.Top + 2), checkState);
 
             var text = lstFrames.Items[e.Index]?.ToString() ?? string.Empty;
@@ -2798,6 +2912,75 @@ namespace TeamApp
             return CreateTrainingDataset(records, modeName);
         }
 
+
+        internal TrainingDatasetPreview GetTrainingDatasetPreviewForDialog(int datasetModeIndex, bool excludeAnomalyFromSelection)
+        {
+            if ((datasetModeIndex == 1 || (datasetModeIndex == 2 && excludeAnomalyFromSelection)) &&
+                !allFrames.Any(record => record.IsAnomaly || record.MovingAverage.HasValue || record.Volatility.HasValue))
+            {
+                DetectAnomalies(false);
+            }
+
+            var candidates = datasetModeIndex switch
+            {
+                1 => allFrames.Where(record => !record.Deleted && !record.IsAnomaly).ToList(),
+                2 => visibleFrames.Where(record => !record.Deleted).ToList(),
+                _ => allFrames.Where(record => !record.Deleted).ToList()
+            };
+
+            if (datasetModeIndex == 2 && excludeAnomalyFromSelection)
+            {
+                candidates = candidates.Where(record => !record.IsAnomaly).ToList();
+            }
+
+            var usable = 0;
+            var missingOrBroken = 0;
+            foreach (var record in candidates)
+            {
+                var path = ResolveImagePath(record);
+                if (File.Exists(path) && IsReadableImageFile(path))
+                {
+                    usable++;
+                }
+                else
+                {
+                    missingOrBroken++;
+                }
+            }
+
+            var throttleValues = candidates
+                .Where(record => record.Throttle.HasValue)
+                .Select(record => record.Throttle!.Value)
+                .ToList();
+            var positiveThrottle = throttleValues.Count(value => value > 0.000001);
+            var zeroOrReverseThrottle = candidates.Count(record => !record.Throttle.HasValue || record.Throttle.Value <= 0.000001);
+            var anomalyInCandidates = candidates.Count(record => record.IsAnomaly);
+
+            return new TrainingDatasetPreview
+            {
+                TotalFrames = allFrames.Count,
+                VisibleFrames = visibleFrames.Count,
+                CandidateFrames = candidates.Count,
+                UsableFrames = usable,
+                MissingOrBrokenFrames = missingOrBroken,
+                DeletedFrames = allFrames.Count(record => record.Deleted),
+                EditedFrames = allFrames.Count(record => record.Edited),
+                TotalAnomalyFrames = allFrames.Count(record => record.IsAnomaly),
+                CandidateAnomalyFrames = anomalyInCandidates,
+                PositiveThrottleFrames = positiveThrottle,
+                ZeroOrReverseThrottleFrames = zeroOrReverseThrottle,
+                ThrottleMin = throttleValues.Count == 0 ? null : throttleValues.Min(),
+                ThrottleMax = throttleValues.Count == 0 ? null : throttleValues.Max(),
+                ThrottleAverage = throttleValues.Count == 0 ? null : throttleValues.Average(),
+                ModeName = datasetModeIndex switch
+                {
+                    1 => "이상치 제외 학습",
+                    2 => excludeAnomalyFromSelection ? "필터 선택군 + 이상치 제외" : "필터 선택군",
+                    _ => "전체 데이터 학습"
+                }
+            };
+        }
+
         internal bool TryMapTrainingPathToLocalFile(string trainingPath, out string localPath)
         {
             localPath = string.Empty;
@@ -2867,8 +3050,59 @@ namespace TeamApp
             }
 
             RefreshTrainingPathDefaults(false);
-            using var dialog = new Form2(this);
-            dialog.ShowDialog(this);
+            if (activeTrainingForm != null && !activeTrainingForm.IsDisposed)
+            {
+                activeTrainingForm.Activate();
+                return;
+            }
+
+            activeTrainingForm = new Form2(this);
+            SetMainEditingEnabledForTrainingWindow(false);
+            activeTrainingForm.FormClosed += (_, _) =>
+            {
+                activeTrainingForm = null;
+                SetMainEditingEnabledForTrainingWindow(true);
+            };
+            activeTrainingForm.Show(this);
+        }
+
+        internal void SetMainEditingEnabledForTrainingWindow(bool enabled)
+        {
+            var controls = new Control[]
+            {
+                btnOpenFolder,
+                btnApplyFilter,
+                btnClearFilter,
+                chkThrottlePositive,
+                chkExcludeAngleZero,
+                chkAngleRange,
+                chkThrottleRange,
+                chkAnomalyOnly,
+                chkDeletedOnly,
+                chkEditedOnly,
+                numAngleMin,
+                numAngleMax,
+                numThrottleMin,
+                numThrottleMax,
+                btnAnalyzeAnomaly,
+                btnClearAnomaly,
+                btnNextAnomaly,
+                grpImageEdit,
+                grpDeleteOps,
+                btnSave,
+                txtAngle,
+                txtThrottle,
+                picFrame
+            };
+
+            foreach (var control in controls)
+            {
+                control.Enabled = enabled;
+            }
+
+            lblHint.Text = enabled
+                ? "학습 환경/경로/명령 실행/성공률은 AI 학습 창에서 관리합니다."
+                : "AI 학습 창이 열려 있습니다. 학습 중 데이터 손상을 막기 위해 편집 기능은 잠시 비활성화됩니다. 프레임 탐색/자동 재생은 사용할 수 있습니다.";
         }
 
         internal string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir, string sshPassword)
@@ -4179,6 +4413,41 @@ namespace TeamApp
             return string.IsNullOrWhiteSpace(value) ? "-" : value;
         }
 
+
+        internal sealed class TrainingDatasetPreview
+        {
+            public string ModeName { get; set; } = string.Empty;
+            public int TotalFrames { get; set; }
+            public int VisibleFrames { get; set; }
+            public int CandidateFrames { get; set; }
+            public int UsableFrames { get; set; }
+            public int MissingOrBrokenFrames { get; set; }
+            public int DeletedFrames { get; set; }
+            public int EditedFrames { get; set; }
+            public int TotalAnomalyFrames { get; set; }
+            public int CandidateAnomalyFrames { get; set; }
+            public int PositiveThrottleFrames { get; set; }
+            public int ZeroOrReverseThrottleFrames { get; set; }
+            public double? ThrottleMin { get; set; }
+            public double? ThrottleMax { get; set; }
+            public double? ThrottleAverage { get; set; }
+
+            public int DataIntegrityScore => Percent(UsableFrames, Math.Max(1, CandidateFrames));
+            public int ThrottleQualityScore => Percent(PositiveThrottleFrames, Math.Max(1, CandidateFrames));
+            public int AnomalyControlScore => CandidateFrames <= 0 ? 0 : Math.Max(0, 100 - Percent(CandidateAnomalyFrames, Math.Max(1, CandidateFrames)));
+            public int AvailabilityScore => Percent(CandidateFrames, Math.Max(1, TotalFrames - DeletedFrames));
+
+            public static int Percent(int value, int total)
+            {
+                if (total <= 0)
+                {
+                    return 0;
+                }
+
+                return Math.Max(0, Math.Min(100, (int)Math.Round(value * 100.0 / total)));
+            }
+        }
+
         private sealed class FrameRecord
         {
             public int GlobalOrder { get; set; }
@@ -4220,6 +4489,9 @@ namespace TeamApp
 
     internal sealed class ColoredCheckedListBox : CheckedListBox
     {
+        private bool suppressMouseUpAfterManualCheck;
+        private bool suppressClickAfterManualCheck;
+
         public ColoredCheckedListBox()
         {
             DrawMode = DrawMode.OwnerDrawFixed;
@@ -4233,13 +4505,38 @@ namespace TeamApp
             var index = IndexFromPoint(e.Location);
             if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
             {
+                Focus();
                 SelectedIndex = index;
+                suppressMouseUpAfterManualCheck = true;
+                suppressClickAfterManualCheck = true;
                 SetItemChecked(index, !GetItemChecked(index));
                 Invalidate(GetItemRectangle(index));
                 return;
             }
 
             base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (suppressMouseUpAfterManualCheck)
+            {
+                suppressMouseUpAfterManualCheck = false;
+                return;
+            }
+
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            if (suppressClickAfterManualCheck)
+            {
+                suppressClickAfterManualCheck = false;
+                return;
+            }
+
+            base.OnClick(e);
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
@@ -4263,7 +4560,7 @@ namespace TeamApp
 
             var itemBounds = GetItemRectangle(index);
             using var graphics = CreateGraphics();
-            var glyphSize = CheckBoxRenderer.GetGlyphSize(graphics, CheckBoxState.UncheckedNormal);
+            var glyphSize = CheckBoxRenderer.GetGlyphSize(graphics, VisualCheckBoxState.UncheckedNormal);
             var glyphBounds = new Rectangle(
                 itemBounds.Left + 3,
                 itemBounds.Top + Math.Max(0, (itemBounds.Height - glyphSize.Height) / 2),
@@ -4305,7 +4602,7 @@ namespace TeamApp
             }
 
             var isChecked = GetItemChecked(e.Index);
-            var checkBoxState = isChecked ? CheckBoxState.CheckedNormal : CheckBoxState.UncheckedNormal;
+            var checkBoxState = isChecked ? VisualCheckBoxState.CheckedNormal : VisualCheckBoxState.UncheckedNormal;
             var glyphSize = CheckBoxRenderer.GetGlyphSize(e.Graphics, checkBoxState);
             var glyphLocation = new Point(e.Bounds.Left + 3, e.Bounds.Top + Math.Max(0, (e.Bounds.Height - glyphSize.Height) / 2));
             CheckBoxRenderer.DrawCheckBox(e.Graphics, glyphLocation, checkBoxState);
