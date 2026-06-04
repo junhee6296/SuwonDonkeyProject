@@ -4220,6 +4220,8 @@ namespace TeamApp
 
     internal sealed class ColoredCheckedListBox : CheckedListBox
     {
+        private int lastCheckAnchorIndex = -1;
+
         public ColoredCheckedListBox()
         {
             DrawMode = DrawMode.OwnerDrawFixed;
@@ -4233,13 +4235,43 @@ namespace TeamApp
             var index = IndexFromPoint(e.Location);
             if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
             {
+                // preserve previous selection to use as anchor when shift-clicking
+                var previousSelected = SelectedIndex;
                 SelectedIndex = index;
+
+                var shiftPressed = (Control.ModifierKeys & Keys.Shift) == Keys.Shift;
+
+                // Determine an anchor index: prefer the last recorded anchor, otherwise previous selection, otherwise clicked index
+                var anchor = lastCheckAnchorIndex >= 0 ? lastCheckAnchorIndex : (previousSelected >= 0 ? previousSelected : index);
+
+                if (shiftPressed && anchor >= 0 && anchor != index)
+                {
+                    var start = Math.Min(anchor, index);
+                    var end = Math.Max(anchor, index);
+                    // Invert checked state for the whole range
+                    for (var i = start; i <= end; i++)
+                    {
+                        SetItemChecked(i, !GetItemChecked(i));
+                    }
+                    Invalidate();
+                    // keep the original anchor so multiple shift-clicks are relative to the same start
+                    return;
+                }
+
+                // Normal single toggle
                 SetItemChecked(index, !GetItemChecked(index));
                 Invalidate(GetItemRectangle(index));
+                // Update anchor for future shift operations
+                lastCheckAnchorIndex = index;
                 return;
             }
 
             base.OnMouseDown(e);
+            // If user clicked non-checkbox area without shift, update anchor to that item so subsequent shift-clicks use it
+            if (index >= 0 && index < Items.Count && (Control.ModifierKeys & Keys.Shift) != Keys.Shift)
+            {
+                lastCheckAnchorIndex = index;
+            }
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
