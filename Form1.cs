@@ -11,13 +11,11 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Forms.VisualStyles;
-using OpenCvSharp;
-// OpenCvSharp.Extensions may not be available in this build; use Cv2.ImEncode fallback for Mat->Bitmap conversion
-using Point = System.Drawing.Point;
 
 namespace TeamApp
 {
@@ -25,7 +23,8 @@ namespace TeamApp
     {
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = false
+            WriteIndented = false,
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
         };
 
         private readonly List<FrameRecord> allFrames = new List<FrameRecord>();
@@ -61,6 +60,7 @@ namespace TeamApp
             {
                 return;
             }
+
             InitializeRuntime();
         }
 
@@ -75,7 +75,6 @@ namespace TeamApp
             chkAnomalyOnly.CheckedChanged += chkAnomalyOnly_CheckedChanged;
             chkDeletedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
             chkEditedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
-            btnCanny.Click += btnCanny_Click;
             btnClearCheckedFrames.Text = "전체 해제";
             btnDelete.Text = "이미지 삭제";
             btnUndo.Text = "삭제 이미지 복구";
@@ -186,7 +185,9 @@ namespace TeamApp
 
             picFrame.SetBounds(12, 22, innerW, pictureHeight);
             grpImageEdit.SetBounds(12, picFrame.Bottom + 8, innerW, editHeight);
-            lblEditHint.SetBounds(10, 20, Math.Max(120, grpImageEdit.ClientSize.Width - 20), 18);
+            var cannyW = 92;
+            btnCanny.SetBounds(Math.Max(10, grpImageEdit.ClientSize.Width - cannyW - 12), 16, cannyW, 23);
+            lblEditHint.SetBounds(10, 20, Math.Max(120, btnCanny.Left - 20), 18);
             cmbMaskMode.SetBounds(10, 44, 80, 23);
             var btnY = 42;
             var buttonW = Math.Max(80, (grpImageEdit.ClientSize.Width - 110) / 4);
@@ -2239,6 +2240,86 @@ namespace TeamApp
             return success > 0;
         }
 
+        private void btnCanny_Click(object? sender, EventArgs e)
+        {
+            var targets = GetTargetRecordsForBatch();
+            if (targets.Count == 0)
+            {
+                MessageBox.Show("캐니 에지를 적용할 프레임을 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var success = 0;
+            foreach (var record in targets)
+            {
+                try
+                {
+                    ApplyCannyEdgeToImageFile(ResolveImagePath(record));
+                    record.Edited = true;
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"캐니 에지 적용 실패: {record.ImageFile} / {ex.Message}");
+                }
+            }
+
+            SaveUiMarks();
+            var current = CurrentRecord();
+            if (current != null)
+            {
+                LoadImage(current);
+            }
+            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
+            AppendLog($"캐니 에지 적용: {success}/{targets.Count}개");
+            if (success == 0)
+            {
+                MessageBox.Show("캐니 에지를 적용하지 못했습니다. OpenCvSharp 패키지 복원 여부와 이미지 파일 상태를 확인하세요.", "캐니 에지", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void ApplyCannyEdgeToImageFile(string imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
+            }
+
+            BackupImageIfNeeded(imagePath);
+            using var source = OpenCvSharp.Cv2.ImRead(imagePath, OpenCvSharp.ImreadModes.Color);
+            if (source.Empty())
+            {
+                throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다.");
+            }
+
+            using var gray = new OpenCvSharp.Mat();
+            using var blurred = new OpenCvSharp.Mat();
+            using var edges = new OpenCvSharp.Mat();
+            using var output = new OpenCvSharp.Mat();
+            OpenCvSharp.Cv2.CvtColor(source, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
+            OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 1.2);
+            OpenCvSharp.Cv2.Canny(blurred, edges, 60, 160);
+            OpenCvSharp.Cv2.CvtColor(edges, output, OpenCvSharp.ColorConversionCodes.GRAY2BGR);
+
+            var directory = Path.GetDirectoryName(imagePath) ?? string.Empty;
+            var tempPath = Path.Combine(directory, Path.GetFileNameWithoutExtension(imagePath) + ".canny.tmp" + Path.GetExtension(imagePath));
+            try
+            {
+                if (!OpenCvSharp.Cv2.ImWrite(tempPath, output))
+                {
+                    throw new InvalidOperationException("OpenCV 이미지 저장에 실패했습니다.");
+                }
+                ReplaceFileAtomically(tempPath, imagePath);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+        }
+
         private void btnReplaceRegion_Click(object? sender, EventArgs e)
         {
             if (!TryGetSelectedBitmapAndRect(out _, out var rect))
@@ -2514,301 +2595,6 @@ namespace TeamApp
             selectedImageRect = null;
             UpdateSelectionLabel();
             picFrame.Invalidate();
-        }
-
-        private void btnCanny_Click(object? sender, EventArgs e)
-        {
-            var targets = GetTargetRecordsForBatch();
-            if (targets.Count == 0)
-            {
-                MessageBox.Show("캐니 에지 변환할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            var success = 0;
-            foreach (var record in targets)
-            {
-                try
-                {
-                    ApplyCannyToImageFile(ResolveImagePath(record), 50, 200);
-                    record.Edited = true;
-                    success++;
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"캐니 변환 실패: {record.ImageFile} / {ex.Message}");
-                }
-            }
-
-            SaveUiMarks();
-            var current = CurrentRecord();
-            if (current != null)
-            {
-                LoadImage(current);
-            }
-            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
-            AppendLog($"캐니 에지 적용: {success}/{targets.Count}개 (임계값 50/200)");
-        }
-
-        private void ApplyCannyToImageFile(string imagePath, int lowThreshold, int highThreshold)
-        {
-            // Implemented using OpenCvSharp for better accuracy and performance
-            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
-            {
-                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
-            }
-
-            // Avoid stacking overlays: if an edited backup exists, use it as the source (original unmodified image)
-            var srcPath = imagePath;
-            try
-            {
-                var editedBackupPath = GetEditedBackupPath(imagePath);
-                if (!string.IsNullOrWhiteSpace(editedBackupPath) && File.Exists(editedBackupPath))
-                {
-                    srcPath = editedBackupPath;
-                }
-            }
-            catch
-            {
-                // ignore path conversion issues and fall back to provided imagePath
-                srcPath = imagePath;
-            }
-
-            // Use OpenCvSharp to process image
-            using var src = OpenCvSharp.Cv2.ImRead(srcPath, OpenCvSharp.ImreadModes.Color);
-            if (src.Empty())
-            {
-                throw new InvalidOperationException("이미지를 열 수 없습니다: " + imagePath);
-            }
-
-            // Resize small images up to improve stability
-            var work = src;
-            var scale = 1.0;
-            if (src.Width < 320)
-            {
-                scale = 320.0 / src.Width;
-                var newW = (int)Math.Round(src.Width * scale);
-                var newH = (int)Math.Round(src.Height * scale);
-                work = new OpenCvSharp.Mat();
-                OpenCvSharp.Cv2.Resize(src, work, new OpenCvSharp.Size(newW, newH), 0, 0, OpenCvSharp.InterpolationFlags.Linear);
-            }
-
-            // Color mask and brightness enhancement to handle dark images
-            using var hsv = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.CvtColor(work, hsv, OpenCvSharp.ColorConversionCodes.BGR2HSV);
-
-            // Split channels and equalize V (brightness) to improve contrast for dark frames
-            var hsvChannels = OpenCvSharp.Cv2.Split(hsv);
-            using var vCh = hsvChannels[2];
-            try
-            {
-                OpenCvSharp.Cv2.EqualizeHist(vCh, vCh);
-            }
-            catch
-            {
-                // some OpenCv builds may throw on unusual inputs; ignore and proceed
-            }
-            // re-merge hsv (with equalized V) for color masking
-            OpenCvSharp.Cv2.Merge(new[] { hsvChannels[0], hsvChannels[1], vCh }, hsv);
-
-            // White mask (low saturation, high value)
-            var whiteLower = new OpenCvSharp.Scalar(0, 0, 180);
-            var whiteUpper = new OpenCvSharp.Scalar(180, 80, 255);
-            using var whiteMask = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.InRange(hsv, whiteLower, whiteUpper, whiteMask);
-
-            // Yellow mask (hue around 15-40)
-            var yellowLower = new OpenCvSharp.Scalar(10, 60, 60);
-            var yellowUpper = new OpenCvSharp.Scalar(45, 255, 255);
-            using var yellowMask = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.InRange(hsv, yellowLower, yellowUpper, yellowMask);
-
-            using var colorMask = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.BitwiseOr(whiteMask, yellowMask, colorMask);
-
-            // Additionally build a brightness mask from equalized V to capture bright lines on dark images
-            using var brightMask = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.Threshold(vCh, brightMask, 100, 255, ThresholdTypes.Binary);
-            OpenCvSharp.Cv2.BitwiseOr(colorMask, brightMask, colorMask);
-
-            // Grayscale and blur to reduce noise
-            using var gray = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.CvtColor(work, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
-            OpenCvSharp.Cv2.GaussianBlur(gray, gray, new OpenCvSharp.Size(5, 5), 1.5);
-
-            // Canny using provided thresholds; if thresholds seem inappropriate for dark images, allow adaptive fallback
-            using var edges = new OpenCvSharp.Mat();
-            var useLow = lowThreshold;
-            var useHigh = highThreshold;
-            try
-            {
-                var meanScalar = OpenCvSharp.Cv2.Mean(gray);
-                var meanVal = meanScalar.Val0;
-                if (meanVal < 30)
-                {
-                    useLow = Math.Max(10, (int)Math.Round(meanVal * 0.7));
-                    useHigh = Math.Max(useLow + 50, (int)Math.Round(meanVal * 2.5));
-                }
-            }
-            catch
-            {
-                // ignore and use provided thresholds
-            }
-
-            OpenCvSharp.Cv2.Canny(gray, edges, useLow, useHigh);
-
-            // Combine with color mask to focus on track colors
-            using var maskedEdges = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.BitwiseAnd(edges, colorMask, maskedEdges);
-
-            // Morphology to connect broken segments and remove small specks
-            var kernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Rect, new OpenCvSharp.Size(3, 3));
-            OpenCvSharp.Cv2.MorphologyEx(maskedEdges, maskedEdges, OpenCvSharp.MorphTypes.Close, kernel, iterations: 2);
-            OpenCvSharp.Cv2.MorphologyEx(maskedEdges, maskedEdges, OpenCvSharp.MorphTypes.Open, kernel, iterations: 1);
-
-            // Find contours and filter by length/area and elongation
-            OpenCvSharp.Point[][] contours;
-            HierarchyIndex[] hierarchy;
-            Cv2.FindContours(maskedEdges, out contours, out hierarchy, RetrievalModes.List, ContourApproximationModes.ApproxSimple);
-
-            // accepted mask prevents adding multiple overlapping contours (reduces duplicated/stacked outlines)
-            using var acceptedMask = new Mat(maskedEdges.Size(), MatType.CV_8UC1);
-            var minContourLength = Math.Max(40, Math.Min(work.Width, work.Height) / 20);
-            for (var i = 0; i < contours.Length; i++)
-            {
-                var cnt = contours[i];
-                var length = OpenCvSharp.Cv2.ArcLength(cnt, false);
-                if (length < minContourLength) continue;
-                var rect = OpenCvSharp.Cv2.BoundingRect(cnt);
-                var aspect = rect.Width > 0 ? (double)rect.Height / rect.Width : 0.0;
-                var area = OpenCvSharp.Cv2.ContourArea(cnt);
-                if (area < 30) continue;
-
-                // prefer elongated (line-like) or long contours
-                if (length >= minContourLength || aspect >= 2.5 || area >= minContourLength * 2)
-                {
-                    // render this contour to a temporary mask
-                    using var tmp = new Mat(acceptedMask.Size(), MatType.CV_8UC1);
-                    tmp.SetTo(Scalar.Black);
-                    Cv2.DrawContours(tmp, contours, i, new Scalar(255), thickness: 1);
-                    // compute overlap with already accepted contours
-                    using var inter = new Mat();
-                    Cv2.BitwiseAnd(acceptedMask, tmp, inter);
-                    var interArea = Cv2.CountNonZero(inter);
-                    // skip if large overlap (likely duplicate/parallel contour)
-                    if (interArea > 0 && interArea > area * 0.25)
-                    {
-                        // skip adding this contour
-                        continue;
-                    }
-
-                    // accept this contour
-                    Cv2.BitwiseOr(acceptedMask, tmp, acceptedMask);
-                }
-            }
-            // Apply morphological skeletonization to produce single-pixel-wide skeleton
-            var thinned = MorphologicalSkeleton(acceptedMask);
-
-            // If upscaled, downscale mask back to original size
-            OpenCvSharp.Mat outMask = thinned;
-            if (scale != 1.0)
-            {
-                var origSize = new OpenCvSharp.Size(src.Width, src.Height);
-                var downThinned = new OpenCvSharp.Mat();
-                OpenCvSharp.Cv2.Resize(thinned, downThinned, origSize, 0, 0, OpenCvSharp.InterpolationFlags.Area);
-                outMask = downThinned;
-            }
-
-            // Remove tiny components from skeleton to reduce clutter
-            try
-            {
-                OpenCvSharp.Point[][] smallCnts;
-                HierarchyIndex[] smallHier;
-                Cv2.FindContours(outMask, out smallCnts, out smallHier, RetrievalModes.List, ContourApproximationModes.ApproxNone);
-                using var cleaned = new Mat(outMask.Size(), MatType.CV_8UC1, Scalar.Black);
-                var minSkeletonLen = Math.Max(8, minContourLength / 4);
-                for (var i = 0; i < smallCnts.Length; i++)
-                {
-                    var len = Cv2.ArcLength(smallCnts[i], false);
-                    if (len >= minSkeletonLen)
-                    {
-                        Cv2.DrawContours(cleaned, smallCnts, i, Scalar.White, thickness: 1);
-                    }
-                }
-
-                // Build colored overlay: darken original and draw green edges from cleaned skeleton
-                using var srcColor = src.Clone();
-                using var dark = new Mat();
-                // scale down brightness to emphasize edges
-                srcColor.ConvertTo(dark, srcColor.Type(), 0.35, 0);
-
-                using var colorEdges = new Mat(src.Size(), MatType.CV_8UC3, Scalar.Black);
-                colorEdges.SetTo(new Scalar(0, 200, 0), cleaned);
-
-                using var composed = new Mat();
-                Cv2.Add(dark, colorEdges, composed);
-
-                // convert to Bitmap via PNG encoding and MemoryStream
-                Bitmap bitmap;
-                byte[] encoded;
-                OpenCvSharp.Cv2.ImEncode(".png", composed, out encoded);
-                using (var ms = new MemoryStream(encoded))
-                {
-                    bitmap = new Bitmap(ms);
-                }
-                BackupImageIfNeeded(imagePath);
-                SaveBitmapAtomically(bitmap, imagePath);
-                bitmap.Dispose();
-            }
-            finally
-            {
-                // nothing to do here
-            }
-            // cleanup
-            if (!ReferenceEquals(work, src)) work.Dispose();
-            hsv.Dispose();
-            whiteMask.Dispose();
-            yellowMask.Dispose();
-            colorMask.Dispose();
-            gray.Dispose();
-            edges.Dispose();
-            maskedEdges.Dispose();
-            acceptedMask.Dispose();
-            thinned.Dispose();
-            if (!object.ReferenceEquals(outMask, thinned)) outMask.Dispose();
-        }
-
-        // Morphological skeletonization: iterative erosion + opening accumulation
-        private static Mat MorphologicalSkeleton(Mat src)
-        {
-            if (src.Empty() || src.Type() != MatType.CV_8UC1)
-            {
-                return src.Clone();
-            }
-
-            var img = src.Clone();
-            var skeleton = new Mat(img.Size(), MatType.CV_8UC1, Scalar.Black);
-            var temp = new Mat();
-            var eroded = new Mat();
-            var element = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(3, 3));
-
-            while (true)
-            {
-                Cv2.Erode(img, eroded, element);
-                Cv2.MorphologyEx(eroded, temp, MorphTypes.Open, element);
-                Cv2.Subtract(eroded, temp, temp);
-                Cv2.BitwiseOr(skeleton, temp, skeleton);
-                eroded.CopyTo(img);
-                if (Cv2.CountNonZero(img) == 0)
-                {
-                    break;
-                }
-            }
-
-            temp.Dispose();
-            eroded.Dispose();
-            element.Dispose();
-            return skeleton;
         }
 
         private static Color CalculateAverageColor(Bitmap bitmap, Rectangle rect)
@@ -4518,8 +4304,6 @@ namespace TeamApp
 
     internal sealed class ColoredCheckedListBox : CheckedListBox
     {
-        private int lastCheckAnchorIndex = -1;
-
         public ColoredCheckedListBox()
         {
             DrawMode = DrawMode.OwnerDrawFixed;
@@ -4527,49 +4311,36 @@ namespace TeamApp
         }
 
         public Func<int, FrameListVisualState>? ResolveVisualState { get; set; }
+        private int lastCheckClickIndex = -1;
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             var index = IndexFromPoint(e.Location);
             if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
             {
-                // preserve previous selection to use as anchor when shift-clicking
-                var previousSelected = SelectedIndex;
+                Focus();
                 SelectedIndex = index;
-
-                var shiftPressed = (Control.ModifierKeys & Keys.Shift) == Keys.Shift;
-
-                // Determine an anchor index: prefer the last recorded anchor, otherwise previous selection, otherwise clicked index
-                var anchor = lastCheckAnchorIndex >= 0 ? lastCheckAnchorIndex : (previousSelected >= 0 ? previousSelected : index);
-
-                if (shiftPressed && anchor >= 0 && anchor != index)
+                var nextState = !GetItemChecked(index);
+                if ((ModifierKeys & Keys.Shift) == Keys.Shift && lastCheckClickIndex >= 0 && lastCheckClickIndex < Items.Count)
                 {
-                    var start = Math.Min(anchor, index);
-                    var end = Math.Max(anchor, index);
-                    // Invert checked state for the whole range
+                    var start = Math.Min(lastCheckClickIndex, index);
+                    var end = Math.Max(lastCheckClickIndex, index);
                     for (var i = start; i <= end; i++)
                     {
-                        SetItemChecked(i, !GetItemChecked(i));
+                        SetItemChecked(i, nextState);
                     }
                     Invalidate();
-                    // keep the original anchor so multiple shift-clicks are relative to the same start
-                    return;
                 }
-
-                // Normal single toggle
-                SetItemChecked(index, !GetItemChecked(index));
-                Invalidate(GetItemRectangle(index));
-                // Update anchor for future shift operations
-                lastCheckAnchorIndex = index;
+                else
+                {
+                    SetItemChecked(index, nextState);
+                    Invalidate(GetItemRectangle(index));
+                }
+                lastCheckClickIndex = index;
                 return;
             }
 
             base.OnMouseDown(e);
-            // If user clicked non-checkbox area without shift, update anchor to that item so subsequent shift-clicks use it
-            if (index >= 0 && index < Items.Count && (Control.ModifierKeys & Keys.Shift) != Keys.Shift)
-            {
-                lastCheckAnchorIndex = index;
-            }
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
