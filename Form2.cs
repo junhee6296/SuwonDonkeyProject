@@ -5,6 +5,9 @@ using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace TeamApp
 {
@@ -339,6 +342,191 @@ namespace TeamApp
         private void AppendLog(string text)
         {
             txtLog.AppendText("[" + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + "] " + text + Environment.NewLine);
+        }
+
+        private void btnAnalyzeTrainLog_Click(object sender, EventArgs e)
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Title = "학습 로그 파일 선택",
+                Filter = "Log/Text files (*.log;*.txt)|*.log;*.txt|All files (*.*)|*.*",
+                CheckFileExists = true
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            AnalyzeTrainingLogFile(dialog.FileName);
+        }
+
+        private void AnalyzeTrainingLogFile(string logPath)
+        {
+            if (string.IsNullOrWhiteSpace(logPath) || !File.Exists(logPath))
+            {
+                MessageBox.Show(this, "학습 로그 파일을 찾을 수 없습니다.", "로그 없음", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                var metrics = ParseTrainingLog(File.ReadLines(logPath)).ToList();
+
+                if (metrics.Count == 0)
+                {
+                    MessageBox.Show(
+                        this,
+                        "로그에서 epoch/loss/val_loss 정보를 찾지 못했습니다.\nKeras 학습 로그가 포함된 파일인지 확인하세요.",
+                        "분석 결과 없음",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+
+                    AppendLog("학습 로그 분석 결과 없음: " + logPath);
+                    return;
+                }
+
+                var last = metrics.Last();
+                var bestValLossMetric = metrics
+                    .Where(m => m.ValLoss.HasValue)
+                    .OrderBy(m => m.ValLoss!.Value)
+                    .FirstOrDefault();
+
+                var bestLossMetric = metrics
+                    .Where(m => m.Loss.HasValue)
+                    .OrderBy(m => m.Loss!.Value)
+                    .FirstOrDefault();
+
+                var totalText = last.TotalEpoch.HasValue
+                    ? $"{last.Epoch}/{last.TotalEpoch.Value}"
+                    : last.Epoch.ToString(CultureInfo.InvariantCulture);
+
+                var summary =
+                    $"로그 분석 완료: {metrics.Count}개 epoch 감지\n" +
+                    $"마지막 Epoch: {totalText}\n" +
+                    $"최근 loss: {FormatMetric(last.Loss)}\n" +
+                    $"최근 val_loss: {FormatMetric(last.ValLoss)}\n" +
+                    $"최저 loss: {(bestLossMetric == null ? "-" : FormatMetric(bestLossMetric.Loss) + $" (Epoch {bestLossMetric.Epoch})")}\n" +
+                    $"최저 val_loss: {(bestValLossMetric == null ? "-" : FormatMetric(bestValLossMetric.ValLoss) + $" (Epoch {bestValLossMetric.Epoch})")}";
+
+                lblFeedback.Text = summary;
+
+                if (lblMetricSummary != null)
+                {
+                    lblMetricSummary.Text = summary;
+                }
+
+                AppendLog("학습 로그 분석 완료: " + Path.GetFileName(logPath));
+                AppendLog($"마지막 Epoch {totalText}, loss={FormatMetric(last.Loss)}, val_loss={FormatMetric(last.ValLoss)}");
+
+                if (bestValLossMetric != null)
+                {
+                    AppendLog($"최저 val_loss={FormatMetric(bestValLossMetric.ValLoss)} / Epoch {bestValLossMetric.Epoch}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    "학습 로그 분석 중 오류가 발생했습니다:\n" + ex.Message,
+                    "분석 오류",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private IEnumerable<TrainingLogMetric> ParseTrainingLog(IEnumerable<string> lines)
+        {
+            var result = new List<TrainingLogMetric>();
+            var currentEpoch = 0;
+            int? totalEpoch = null;
+
+            foreach (var rawLine in lines)
+            {
+                var line = rawLine.Trim();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                var epochMatch = Regex.Match(line, @"Epoch\s+(\d+)\s*/\s*(\d+)", RegexOptions.IgnoreCase);
+                if (epochMatch.Success)
+                {
+                    currentEpoch = int.Parse(epochMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+                    totalEpoch = int.Parse(epochMatch.Groups[2].Value, CultureInfo.InvariantCulture);
+                    continue;
+                }
+
+                var loss = TryExtractTrainingMetric(line, "loss");
+                var valLoss = TryExtractTrainingMetric(line, "val_loss");
+                var accuracy = TryExtractTrainingMetric(line, "accuracy");
+                var valAccuracy = TryExtractTrainingMetric(line, "val_accuracy");
+
+                if (!loss.HasValue && !valLoss.HasValue && !accuracy.HasValue && !valAccuracy.HasValue)
+                {
+                    continue;
+                }
+
+                if (currentEpoch <= 0)
+                {
+                    currentEpoch = result.Count + 1;
+                }
+
+                var metric = result.LastOrDefault(m => m.Epoch == currentEpoch);
+                if (metric == null)
+                {
+                    metric = new TrainingLogMetric
+                    {
+                        Epoch = currentEpoch,
+                        TotalEpoch = totalEpoch
+                    };
+                    result.Add(metric);
+                }
+
+                if (loss.HasValue) metric.Loss = loss.Value;
+                if (valLoss.HasValue) metric.ValLoss = valLoss.Value;
+                if (accuracy.HasValue) metric.Accuracy = accuracy.Value;
+                if (valAccuracy.HasValue) metric.ValAccuracy = valAccuracy.Value;
+            }
+
+            return result;
+        }
+
+        private static double? TryExtractTrainingMetric(string line, string name)
+        {
+            var match = Regex.Match(
+                line,
+                $@"(?<![A-Za-z0-9_]){Regex.Escape(name)}\s*[:=]\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)",
+                RegexOptions.IgnoreCase);
+
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            if (double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            {
+                return value;
+            }
+
+            return null;
+        }
+
+        private static string FormatMetric(double? value)
+        {
+            return value.HasValue
+                ? value.Value.ToString("0.#####", CultureInfo.InvariantCulture)
+                : "-";
+        }
+
+        private sealed class TrainingLogMetric
+        {
+            public int Epoch { get; set; }
+            public int? TotalEpoch { get; set; }
+            public double? Loss { get; set; }
+            public double? ValLoss { get; set; }
+            public double? Accuracy { get; set; }
+            public double? ValAccuracy { get; set; }
         }
     }
 }

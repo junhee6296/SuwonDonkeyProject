@@ -136,6 +136,7 @@ namespace TeamApp
             lblMetricProcessValue = new Label();
             lblMetricOverall = new Label();
             lblMetricSummary = new Label();
+            btnAnalyzeTrainLog = new Button();
             resultBox.SuspendLayout();
             groupSettings.SuspendLayout();
             groupRemote.SuspendLayout();
@@ -235,7 +236,7 @@ namespace TeamApp
             cmbDatasetMode.Items.AddRange(new object[] { "이상치 포함 전체 데이터 학습", "이상치 제외 학습", "데이터 필터링 선택군만 학습" });
             cmbDatasetMode.Location = new Point(150, 28);
             cmbDatasetMode.Name = "cmbDatasetMode";
-            cmbDatasetMode.Size = new Size(330, 23);
+            cmbDatasetMode.Size = new Size(330, 33);
             cmbDatasetMode.TabIndex = 1;
             cmbDatasetMode.SelectedIndexChanged += cmbDatasetMode_SelectedIndexChanged;
             // 
@@ -262,7 +263,7 @@ namespace TeamApp
             cmbEnvironment.Items.AddRange(new object[] { "Windows 환경 빌드", "WSL 환경 빌드", "VirtualBox 환경 빌드" });
             cmbEnvironment.Location = new Point(150, 64);
             cmbEnvironment.Name = "cmbEnvironment";
-            cmbEnvironment.Size = new Size(220, 23);
+            cmbEnvironment.Size = new Size(220, 33);
             cmbEnvironment.TabIndex = 4;
             cmbEnvironment.SelectedIndexChanged += cmbEnvironment_SelectedIndexChanged;
             // 
@@ -279,7 +280,7 @@ namespace TeamApp
             txtData.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtData.Location = new Point(150, 100);
             txtData.Name = "txtData";
-            txtData.Size = new Size(450, 23);
+            txtData.Size = new Size(450, 31);
             txtData.TabIndex = 6;
             txtData.TextChanged += GenerateCommandOnChanged;
             // 
@@ -307,7 +308,7 @@ namespace TeamApp
             txtModel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtModel.Location = new Point(150, 136);
             txtModel.Name = "txtModel";
-            txtModel.Size = new Size(450, 23);
+            txtModel.Size = new Size(450, 31);
             txtModel.TabIndex = 9;
             txtModel.TextChanged += GenerateCommandOnChanged;
             // 
@@ -335,7 +336,7 @@ namespace TeamApp
             txtExtraArgs.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtExtraArgs.Location = new Point(150, 172);
             txtExtraArgs.Name = "txtExtraArgs";
-            txtExtraArgs.Size = new Size(450, 23);
+            txtExtraArgs.Size = new Size(450, 31);
             txtExtraArgs.TabIndex = 12;
             txtExtraArgs.TextChanged += GenerateCommandOnChanged;
             // 
@@ -381,7 +382,7 @@ namespace TeamApp
             // 
             txtActivate.Location = new Point(96, 25);
             txtActivate.Name = "txtActivate";
-            txtActivate.Size = new Size(245, 23);
+            txtActivate.Size = new Size(245, 31);
             txtActivate.TabIndex = 1;
             txtActivate.TextChanged += GenerateCommandOnChanged;
             // 
@@ -398,7 +399,7 @@ namespace TeamApp
             txtRemoteWork.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             txtRemoteWork.Location = new Point(436, 25);
             txtRemoteWork.Name = "txtRemoteWork";
-            txtRemoteWork.Size = new Size(235, 23);
+            txtRemoteWork.Size = new Size(235, 31);
             txtRemoteWork.TabIndex = 3;
             txtRemoteWork.TextChanged += GenerateCommandOnChanged;
             // 
@@ -414,7 +415,7 @@ namespace TeamApp
             // 
             txtSshUser.Location = new Point(80, 59);
             txtSshUser.Name = "txtSshUser";
-            txtSshUser.Size = new Size(100, 23);
+            txtSshUser.Size = new Size(100, 31);
             txtSshUser.TabIndex = 5;
             txtSshUser.TextChanged += GenerateCommandOnChanged;
             // 
@@ -430,7 +431,7 @@ namespace TeamApp
             // 
             txtSshHost.Location = new Point(230, 59);
             txtSshHost.Name = "txtSshHost";
-            txtSshHost.Size = new Size(100, 23);
+            txtSshHost.Size = new Size(100, 31);
             txtSshHost.TabIndex = 7;
             txtSshHost.TextChanged += GenerateCommandOnChanged;
             // 
@@ -446,7 +447,7 @@ namespace TeamApp
             // 
             txtSshPort.Location = new Point(380, 59);
             txtSshPort.Name = "txtSshPort";
-            txtSshPort.Size = new Size(65, 23);
+            txtSshPort.Size = new Size(65, 31);
             txtSshPort.TabIndex = 9;
             txtSshPort.TextChanged += GenerateCommandOnChanged;
             // 
@@ -564,9 +565,9 @@ namespace TeamApp
             // 
             groupLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             groupLog.Controls.Add(txtLog);
-            groupLog.Location = new Point(760, 170);
+            groupLog.Location = new Point(760, 198);
             groupLog.Name = "groupLog";
-            groupLog.Size = new Size(290, 650);
+            groupLog.Size = new Size(290, 622);
             groupLog.TabIndex = 15;
             groupLog.TabStop = false;
             groupLog.Text = "실행 로그 / 안내";
@@ -579,7 +580,7 @@ namespace TeamApp
             txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
-            txtLog.Size = new Size(270, 615);
+            txtLog.Size = new Size(270, 587);
             txtLog.TabIndex = 0;
             // 
             // groupMetrics
@@ -778,12 +779,23 @@ namespace TeamApp
             lblMetricSummary.TabIndex = 1;
             lblMetricSummary.Text = "학습 데이터 요약을 계산 중입니다.";
             // 
+            // btnAnalyzeTrainLog
+            // 
+            btnAnalyzeTrainLog.Location = new Point(760, 168);
+            btnAnalyzeTrainLog.Name = "btnAnalyzeTrainLog";
+            btnAnalyzeTrainLog.Size = new Size(290, 32);
+            btnAnalyzeTrainLog.TabIndex = 16;
+            btnAnalyzeTrainLog.Text = "학습 로그 분석";
+            btnAnalyzeTrainLog.UseVisualStyleBackColor = true;
+            btnAnalyzeTrainLog.Click += btnAnalyzeTrainLog_Click;
+            // 
             // Form2
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleDimensions = new SizeF(10F, 25F);
             AutoScaleMode = AutoScaleMode.Font;
             AutoScroll = true;
             ClientSize = new Size(1064, 850);
+            Controls.Add(btnAnalyzeTrainLog);
             Controls.Add(lblTitle);
             Controls.Add(lblGuide);
             Controls.Add(resultBox);
@@ -833,5 +845,6 @@ namespace TeamApp
         private Label lblSshUser;
         private Label lblSshHost;
         private Label lblSshPort;
+        private Button btnAnalyzeTrainLog;
     }
 }
