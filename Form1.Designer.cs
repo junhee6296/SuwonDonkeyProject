@@ -42,6 +42,8 @@ namespace TeamApp
             grpPreview = new GroupBox();
             picFrame = new PictureBox();
             grpImageEdit = new GroupBox();
+            btnCannyPreview = new Button();
+            btnCanny = new Button();
             lblEditHint = new Label();
             cmbMaskMode = new ComboBox();
             btnMaskRegion = new Button();
@@ -104,7 +106,6 @@ namespace TeamApp
             btnCheckDonkey = new Button();
             grpLog = new GroupBox();
             txtLog = new TextBox();
-            btnCanny = new Button();
             grpList.SuspendLayout();
             grpPreview.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
@@ -140,7 +141,7 @@ namespace TeamApp
             txtSelectedFolder.Location = new Point(116, 15);
             txtSelectedFolder.Name = "txtSelectedFolder";
             txtSelectedFolder.ReadOnly = true;
-            txtSelectedFolder.Size = new Size(770, 23);
+            txtSelectedFolder.Size = new Size(770, 31);
             txtSelectedFolder.TabIndex = 1;
             txtSelectedFolder.Text = "mycar 폴더, data 폴더, 또는 tub 폴더를 선택하세요.";
             // 
@@ -255,6 +256,7 @@ namespace TeamApp
             // 
             // grpImageEdit
             // 
+            grpImageEdit.Controls.Add(btnCannyPreview);
             grpImageEdit.Controls.Add(btnCanny);
             grpImageEdit.Controls.Add(lblEditHint);
             grpImageEdit.Controls.Add(cmbMaskMode);
@@ -268,6 +270,26 @@ namespace TeamApp
             grpImageEdit.TabIndex = 1;
             grpImageEdit.TabStop = false;
             grpImageEdit.Text = "이미지 부분 가리기 / 바꾸기";
+            // 
+            // btnCannyPreview
+            // 
+            btnCannyPreview.Location = new Point(358, 17);
+            btnCannyPreview.Name = "btnCannyPreview";
+            btnCannyPreview.Size = new Size(68, 23);
+            btnCannyPreview.TabIndex = 7;
+            btnCannyPreview.Text = "Canny 미리보기";
+            btnCannyPreview.UseVisualStyleBackColor = true;
+            btnCannyPreview.Click += btnCannyPreview_Click;
+            // 
+            // btnCanny
+            // 
+            btnCanny.Location = new Point(432, 16);
+            btnCanny.Name = "btnCanny";
+            btnCanny.Size = new Size(68, 23);
+            btnCanny.TabIndex = 6;
+            btnCanny.Text = "Canny 적용";
+            btnCanny.UseVisualStyleBackColor = true;
+            btnCanny.Click += btnCanny_Click;
             // 
             // lblEditHint
             // 
@@ -285,7 +307,7 @@ namespace TeamApp
             cmbMaskMode.Items.AddRange(new object[] { "검정", "흰색", "회색", "평균색" });
             cmbMaskMode.Location = new Point(10, 44);
             cmbMaskMode.Name = "cmbMaskMode";
-            cmbMaskMode.Size = new Size(80, 23);
+            cmbMaskMode.Size = new Size(80, 33);
             cmbMaskMode.TabIndex = 1;
             // 
             // btnMaskRegion
@@ -377,7 +399,7 @@ namespace TeamApp
             trbFrame.Location = new Point(12, 470);
             trbFrame.Maximum = 0;
             trbFrame.Name = "trbFrame";
-            trbFrame.Size = new Size(506, 45);
+            trbFrame.Size = new Size(506, 69);
             trbFrame.TabIndex = 3;
             trbFrame.Scroll += trbFrame_Scroll;
             // 
@@ -415,7 +437,7 @@ namespace TeamApp
             trbPlaySpeed.Maximum = 20;
             trbPlaySpeed.Minimum = 1;
             trbPlaySpeed.Name = "trbPlaySpeed";
-            trbPlaySpeed.Size = new Size(140, 45);
+            trbPlaySpeed.Size = new Size(140, 69);
             trbPlaySpeed.TabIndex = 7;
             trbPlaySpeed.TickFrequency = 2;
             trbPlaySpeed.Value = 4;
@@ -481,7 +503,7 @@ namespace TeamApp
             // 
             txtAngle.Location = new Point(95, 624);
             txtAngle.Name = "txtAngle";
-            txtAngle.Size = new Size(120, 23);
+            txtAngle.Size = new Size(120, 31);
             txtAngle.TabIndex = 14;
             // 
             // lblThrottle
@@ -496,7 +518,7 @@ namespace TeamApp
             // 
             txtThrottle.Location = new Point(315, 624);
             txtThrottle.Name = "txtThrottle";
-            txtThrottle.Size = new Size(120, 23);
+            txtThrottle.Size = new Size(120, 31);
             txtThrottle.TabIndex = 16;
             // 
             // lblGraph
@@ -628,7 +650,7 @@ namespace TeamApp
             numAngleMin.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
             numAngleMin.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
             numAngleMin.Name = "numAngleMin";
-            numAngleMin.Size = new Size(100, 23);
+            numAngleMin.Size = new Size(100, 31);
             numAngleMin.TabIndex = 7;
             numAngleMin.Value = new decimal(new int[] { 1, 0, 0, int.MinValue });
             // 
@@ -640,7 +662,7 @@ namespace TeamApp
             numAngleMax.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
             numAngleMax.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
             numAngleMax.Name = "numAngleMax";
-            numAngleMax.Size = new Size(100, 23);
+            numAngleMax.Size = new Size(100, 31);
             numAngleMax.TabIndex = 8;
             numAngleMax.Value = new decimal(new int[] { 1, 0, 0, 0 });
             // 
@@ -652,7 +674,7 @@ namespace TeamApp
             numThrottleMin.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
             numThrottleMin.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
             numThrottleMin.Name = "numThrottleMin";
-            numThrottleMin.Size = new Size(100, 23);
+            numThrottleMin.Size = new Size(100, 31);
             numThrottleMin.TabIndex = 9;
             // 
             // numThrottleMax
@@ -663,7 +685,7 @@ namespace TeamApp
             numThrottleMax.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
             numThrottleMax.Minimum = new decimal(new int[] { 10, 0, 0, int.MinValue });
             numThrottleMax.Name = "numThrottleMax";
-            numThrottleMax.Size = new Size(100, 23);
+            numThrottleMax.Size = new Size(100, 31);
             numThrottleMax.TabIndex = 10;
             numThrottleMax.Value = new decimal(new int[] { 1, 0, 0, 0 });
             // 
@@ -719,7 +741,7 @@ namespace TeamApp
             numAnomalyWindow.Maximum = new decimal(new int[] { 200, 0, 0, 0 });
             numAnomalyWindow.Minimum = new decimal(new int[] { 2, 0, 0, 0 });
             numAnomalyWindow.Name = "numAnomalyWindow";
-            numAnomalyWindow.Size = new Size(80, 23);
+            numAnomalyWindow.Size = new Size(80, 31);
             numAnomalyWindow.TabIndex = 1;
             numAnomalyWindow.Value = new decimal(new int[] { 15, 0, 0, 0 });
             // 
@@ -739,7 +761,7 @@ namespace TeamApp
             numAnomalySigma.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
             numAnomalySigma.Minimum = new decimal(new int[] { 5, 0, 0, 65536 });
             numAnomalySigma.Name = "numAnomalySigma";
-            numAnomalySigma.Size = new Size(65, 23);
+            numAnomalySigma.Size = new Size(65, 31);
             numAnomalySigma.TabIndex = 3;
             numAnomalySigma.Value = new decimal(new int[] { 25, 0, 0, 65536 });
             // 
@@ -891,23 +913,13 @@ namespace TeamApp
             txtLog.Size = new Size(360, 115);
             txtLog.TabIndex = 0;
             // 
-            // btnCanny
-            // 
-            btnCanny.Location = new Point(382, 16);
-            btnCanny.Name = "btnCanny";
-            btnCanny.Size = new Size(92, 23);
-            btnCanny.TabIndex = 6;
-            btnCanny.Text = "캐니에지";
-            btnCanny.UseVisualStyleBackColor = true;
-            btnCanny.Click += btnCanny_Click;
-            // 
             // Form1
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
+            AutoScaleDimensions = new SizeF(10F, 25F);
             AutoScaleMode = AutoScaleMode.Font;
             AutoScroll = true;
             BackColor = Color.FromArgb(248, 248, 248);
-            ClientSize = new Size(1224, 821);
+            ClientSize = new Size(1215, 885);
             Controls.Add(btnOpenFolder);
             Controls.Add(txtSelectedFolder);
             Controls.Add(btnOpenDataFolder);
@@ -1022,5 +1034,6 @@ namespace TeamApp
         private System.Windows.Forms.GroupBox grpLog = null!;
         private System.Windows.Forms.TextBox txtLog = null!;
         private Button btnCanny;
+        private Button btnCannyPreview;
     }
 }

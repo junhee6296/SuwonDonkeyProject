@@ -3892,7 +3892,7 @@ namespace TeamApp
                     return true;
                 }
 
-                if ((ch == '&' || ch == '|' ) && i + 1 < command.Length && command[i + 1] == ch)
+                if ((ch == '&' || ch == '|') && i + 1 < command.Length && command[i + 1] == ch)
                 {
                     return true;
                 }
@@ -4283,6 +4283,119 @@ namespace TeamApp
             public double? MovingAverage { get; set; }
             public double? Volatility { get; set; }
             public double AnomalyScore { get; set; }
+        }
+
+        private void txtLog_TextChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void btnCannyPreview_Click(object sender, EventArgs e)
+        {
+            ShowCannyPreview();
+        }
+
+        private void ShowCannyPreview()
+        {
+            var record = CurrentRecord();
+            if (record == null)
+            {
+                MessageBox.Show("먼저 프레임을 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var imagePath = ResolveImagePath(record);
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                MessageBox.Show("현재 프레임의 이미지 파일을 찾을 수 없습니다.", "이미지 없음", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(dataFolder) || !Directory.Exists(dataFolder))
+            {
+                MessageBox.Show("먼저 DonkeyCar 데이터를 불러오세요.", "데이터 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                var previewFolder = Path.Combine(dataFolder, "_canny_preview");
+                Directory.CreateDirectory(previewFolder);
+
+                var previewPath = Path.Combine(
+                    previewFolder,
+                    $"preview_{record.GlobalOrder}_{Path.GetFileNameWithoutExtension(imagePath)}.png"
+                );
+
+                CreateCannyPreviewImageFile(imagePath, previewPath);
+
+                using var stream = File.OpenRead(previewPath);
+                using var source = Image.FromStream(stream);
+                ReplaceFrameImage(new Bitmap(source));
+
+                loadedImagePath = previewPath;
+                selectedImageRect = null;
+                imageDirty = false;
+                UpdateSelectionLabel();
+
+                AppendLog($"Canny 미리보기 표시: {Path.GetFileName(imagePath)}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Canny 미리보기 생성 중 오류가 발생했습니다:\n" + ex.Message,
+                    "Canny 미리보기",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void CreateCannyPreviewImageFile(string inputPath, string outputPath)
+        {
+            if (string.IsNullOrWhiteSpace(inputPath) || !File.Exists(inputPath))
+            {
+                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", inputPath);
+            }
+
+            using var source = OpenCvSharp.Cv2.ImRead(inputPath, OpenCvSharp.ImreadModes.Color);
+            if (source.Empty())
+            {
+                throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다.");
+            }
+
+            using var gray = new OpenCvSharp.Mat();
+            using var blurred = new OpenCvSharp.Mat();
+            using var edges = new OpenCvSharp.Mat();
+            using var output = new OpenCvSharp.Mat();
+
+            OpenCvSharp.Cv2.CvtColor(source, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
+            OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 1.2);
+            OpenCvSharp.Cv2.Canny(blurred, edges, 60, 160);
+            OpenCvSharp.Cv2.CvtColor(edges, output, OpenCvSharp.ColorConversionCodes.GRAY2BGR);
+
+            var directory = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            if (!OpenCvSharp.Cv2.ImWrite(outputPath, output))
+            {
+                throw new InvalidOperationException("OpenCV 이미지 저장에 실패했습니다.");
+            }
+        }
+
+        private void btnOriginalPreview_Click(object? sender, EventArgs e)
+        {
+            var record = CurrentRecord();
+            if (record == null)
+            {
+                MessageBox.Show("먼저 프레임을 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            LoadImage(record);
+            AppendLog("원본 이미지 보기로 복귀");
         }
     }
 
