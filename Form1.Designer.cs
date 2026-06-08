@@ -42,6 +42,7 @@ namespace TeamApp
             grpPreview = new GroupBox();
             picFrame = new PictureBox();
             grpImageEdit = new GroupBox();
+            btnCanny = new Button();
             lblEditHint = new Label();
             cmbMaskMode = new ComboBox();
             btnMaskRegion = new Button();
@@ -104,7 +105,6 @@ namespace TeamApp
             btnCheckDonkey = new Button();
             grpLog = new GroupBox();
             txtLog = new TextBox();
-            btnCanny = new Button();
             grpList.SuspendLayout();
             grpPreview.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
@@ -268,6 +268,16 @@ namespace TeamApp
             grpImageEdit.TabIndex = 1;
             grpImageEdit.TabStop = false;
             grpImageEdit.Text = "이미지 부분 가리기 / 바꾸기";
+            // 
+            // btnCanny
+            // 
+            btnCanny.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+            btnCanny.Location = new Point(418, 15);
+            btnCanny.Name = "btnCanny";
+            btnCanny.Size = new Size(75, 23);
+            btnCanny.TabIndex = 6;
+            btnCanny.Text = "캐니에지";
+            btnCanny.UseVisualStyleBackColor = true;
             // 
             // lblEditHint
             // 
@@ -890,15 +900,6 @@ namespace TeamApp
             txtLog.ScrollBars = ScrollBars.Vertical;
             txtLog.Size = new Size(360, 115);
             txtLog.TabIndex = 0;
-            // 
-            // btnCanny
-            // 
-            btnCanny.Location = new Point(415, 15);
-            btnCanny.Name = "btnCanny";
-            btnCanny.Size = new Size(75, 23);
-            btnCanny.TabIndex = 6;
-            btnCanny.Text = "캐니에지";
-            btnCanny.UseVisualStyleBackColor = true;
             // 
             // Form1
             // 
