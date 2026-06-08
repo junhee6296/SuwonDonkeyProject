@@ -147,6 +147,7 @@ namespace TeamApp
             stopRequested = true;
             UpdateProgressFromMirrorLog(forceLog: true);
             SaveTrainingRunState(null, "stop-requested");
+            SaveUiTrainingLog();
             TryArchiveInterruptedModel("stop-requested");
 
             var stopped = owner.StopInteractiveTrainingProcess();
@@ -166,6 +167,54 @@ namespace TeamApp
                 return;
             }
             Close();
+        }
+
+        private void btnOpenTrainingLog_Click(object? sender, EventArgs e)
+        {
+            SaveUiTrainingLog();
+
+            var folder = trainingSessionFolder;
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            {
+                folder = ResolveLatestTrainingRunFolder();
+            }
+
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            {
+                MessageBox.Show(this, "저장된 학습 로그 폴더를 찾지 못했습니다. 먼저 학습을 실행하거나 학습 로그 분석을 수행하세요.", "저장 로그 열기", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var logFile = Directory.GetFiles(folder, "console_final.log", SearchOption.TopDirectoryOnly).FirstOrDefault()
+                          ?? Directory.GetFiles(folder, "console_mirror.log", SearchOption.TopDirectoryOnly).FirstOrDefault()
+                          ?? Directory.GetFiles(folder, "teamapp_ui_training_log.txt", SearchOption.TopDirectoryOnly).FirstOrDefault()
+                          ?? Directory.GetFiles(folder, "*.log", SearchOption.TopDirectoryOnly).OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(logFile) && File.Exists(logFile))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "notepad.exe",
+                        Arguments = "\"" + logFile + "\"",
+                        UseShellExecute = false
+                    });
+                    AppendLog("저장된 학습 로그 열기: " + logFile);
+                    return;
+                }
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = folder,
+                    UseShellExecute = true
+                });
+                AppendLog("학습 로그 폴더 열기: " + folder);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "학습 로그를 여는 중 오류가 발생했습니다: " + ex.Message, "저장 로그 열기", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void Form2_FormClosing(object? sender, FormClosingEventArgs e)
@@ -396,6 +445,7 @@ namespace TeamApp
                 TryArchiveInterruptedModel("exit-" + exitCode.ToString(CultureInfo.InvariantCulture));
             }
             CopyMirrorLogToSession();
+            SaveUiTrainingLog();
             ShowTrainingResult(exitCode);
         }
 
@@ -1050,6 +1100,45 @@ namespace TeamApp
             catch (Exception ex)
             {
                 AppendLog("중지 모델 보존 실패: " + ex.Message);
+            }
+        }
+
+        private void SaveUiTrainingLog()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(trainingSessionFolder))
+                {
+                    return;
+                }
+                Directory.CreateDirectory(trainingSessionFolder);
+                var path = Path.Combine(trainingSessionFolder, "teamapp_ui_training_log.txt");
+                File.WriteAllText(path, txtLog.Text, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                AppendLog("UI 학습 로그 저장 실패: " + ex.Message);
+            }
+        }
+
+        private string ResolveLatestTrainingRunFolder()
+        {
+            try
+            {
+                var baseFolder = ResolveModelDirectory();
+                var runsRoot = Path.Combine(baseFolder, "_training_runs");
+                if (!Directory.Exists(runsRoot))
+                {
+                    return string.Empty;
+                }
+
+                return Directory.GetDirectories(runsRoot)
+                    .OrderByDescending(Directory.GetLastWriteTimeUtc)
+                    .FirstOrDefault() ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 

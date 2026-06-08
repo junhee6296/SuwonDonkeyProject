@@ -798,12 +798,9 @@ namespace TeamApp
             // 
             // grpTrain
             // 
-            grpTrain.Controls.Add(lblCommand);
-            grpTrain.Controls.Add(chkManualCommandEdit);
-            grpTrain.Controls.Add(txtTrainCommand);
+            // 구형 학습 명령 UI는 Form2로 이동했으므로 디자이너 화면에 추가하지 않습니다.
             grpTrain.Controls.Add(btnTrainingPaths);
             grpTrain.Controls.Add(btnLoadTrainingPreview);
-            grpTrain.Controls.Add(btnTrain);
             grpTrain.Controls.Add(lblHint);
             grpTrain.Location = new Point(832, 552);
             grpTrain.Name = "grpTrain";
@@ -814,18 +811,18 @@ namespace TeamApp
             // 
             // lblCommand
             // 
-            lblCommand.Location = new Point(14, 25);
+            lblCommand.Location = new Point(-200, -200);
             lblCommand.Name = "lblCommand";
-            lblCommand.Size = new Size(100, 20);
+            lblCommand.Size = new Size(1, 1);
             lblCommand.TabIndex = 0;
             lblCommand.Text = "학습 명령";
             lblCommand.Visible = false;
             // 
             // chkManualCommandEdit
             // 
-            chkManualCommandEdit.Location = new Point(250, 23);
+            chkManualCommandEdit.Location = new Point(-200, -200);
             chkManualCommandEdit.Name = "chkManualCommandEdit";
-            chkManualCommandEdit.Size = new Size(115, 24);
+            chkManualCommandEdit.Size = new Size(1, 1);
             chkManualCommandEdit.TabIndex = 1;
             chkManualCommandEdit.Text = "수동 편집";
             chkManualCommandEdit.UseVisualStyleBackColor = true;
@@ -834,12 +831,12 @@ namespace TeamApp
             // 
             // txtTrainCommand
             // 
-            txtTrainCommand.Location = new Point(14, 48);
+            txtTrainCommand.Location = new Point(-200, -200);
             txtTrainCommand.Multiline = true;
             txtTrainCommand.Name = "txtTrainCommand";
             txtTrainCommand.ReadOnly = true;
             txtTrainCommand.ScrollBars = ScrollBars.Vertical;
-            txtTrainCommand.Size = new Size(350, 58);
+            txtTrainCommand.Size = new Size(1, 1);
             txtTrainCommand.TabIndex = 1;
             txtTrainCommand.Text = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
             txtTrainCommand.Visible = false;
@@ -867,9 +864,9 @@ namespace TeamApp
             // 
             // btnTrain
             // 
-            btnTrain.Location = new Point(154, 114);
+            btnTrain.Location = new Point(-200, -200);
             btnTrain.Name = "btnTrain";
-            btnTrain.Size = new Size(104, 30);
+            btnTrain.Size = new Size(1, 1);
             btnTrain.TabIndex = 2;
             btnTrain.Text = "학습 실행";
             btnTrain.UseVisualStyleBackColor = true;
@@ -916,21 +913,21 @@ namespace TeamApp
             // 
             // btnCanny
             // 
-            btnCanny.Location = new Point(418, 42);
+            btnCanny.Location = new Point(356, 42);
             btnCanny.Name = "btnCanny";
-            btnCanny.Size = new Size(76, 24);
+            btnCanny.Size = new Size(138, 24);
             btnCanny.TabIndex = 6;
-            btnCanny.Text = "캐니에지";
+            btnCanny.Text = "선택사진 캐니 변경";
             btnCanny.UseVisualStyleBackColor = true;
             btnCanny.Click += btnCanny_Click;
             // 
             // btnCannyPreviewAll
             // 
-            btnCannyPreviewAll.Location = new Point(294, 42);
+            btnCannyPreviewAll.Location = new Point(216, 42);
             btnCannyPreviewAll.Name = "btnCannyPreviewAll";
-            btnCannyPreviewAll.Size = new Size(116, 24);
+            btnCannyPreviewAll.Size = new Size(132, 24);
             btnCannyPreviewAll.TabIndex = 7;
-            btnCannyPreviewAll.Text = "전체 캐니 미리";
+            btnCannyPreviewAll.Text = "전체사진 캐니 미리";
             btnCannyPreviewAll.UseVisualStyleBackColor = true;
             btnCannyPreviewAll.Click += btnCannyPreviewAll_Click;
             // 

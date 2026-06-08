@@ -199,8 +199,10 @@ namespace TeamApp
             lblEditHint.SetBounds(10, 20, Math.Max(120, editW - 20), 18);
 
             var topRowY = 42;
-            var cannyW = 76;
-            var cannyPreviewW = 116;
+            var cannyW = 138;
+            var cannyPreviewW = 132;
+            btnCanny.Text = "선택사진 캐니 변경";
+            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 보기" : "전체사진 캐니 미리";
             btnCanny.SetBounds(Math.Max(10, editW - cannyW - 12), topRowY, cannyW, 24);
             btnCannyPreviewAll.SetBounds(Math.Max(10, btnCanny.Left - cannyPreviewW - 8), topRowY, cannyPreviewW, 24);
 
@@ -214,8 +216,8 @@ namespace TeamApp
             if (chkTrainedDirectionOverlay.Right + 12 > btnCannyPreviewAll.Left)
             {
                 // 화면 폭이 좁은 경우에는 미리보기/캐니 버튼을 우측에 유지하고 체크박스 폭을 줄여 겹침을 방지한다.
-                chkDrivingOverlay.SetBounds(10, topRowY, Math.Max(88, Math.Min(drivingW, btnCannyPreviewAll.Left - 118)), 24);
-                chkTrainedDirectionOverlay.SetBounds(chkDrivingOverlay.Right + 6, topRowY, Math.Max(78, btnCannyPreviewAll.Left - chkDrivingOverlay.Right - 12), 24);
+                chkDrivingOverlay.SetBounds(10, topRowY, Math.Max(76, Math.Min(drivingW, btnCannyPreviewAll.Left - 104)), 24);
+                chkTrainedDirectionOverlay.SetBounds(chkDrivingOverlay.Right + 6, topRowY, Math.Max(70, btnCannyPreviewAll.Left - chkDrivingOverlay.Right - 12), 24);
             }
 
             cmbMaskMode.SetBounds(10, 76, 80, 23);
@@ -2107,6 +2109,8 @@ namespace TeamApp
             chkTrainedDirectionOverlay.Text = "학습 방향";
             chkTrainedDirectionOverlay.Checked = true;
             chkTrainedDirectionOverlay.AutoSize = false;
+            btnCanny.Text = "선택사진 캐니 변경";
+            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 보기" : "전체사진 캐니 미리";
 
             if (!grpImageEdit.Controls.Contains(chkDrivingOverlay))
             {
@@ -2343,8 +2347,10 @@ namespace TeamApp
                     throw new InvalidOperationException("분석할 학습 로그나 catalog 파일을 찾지 못했습니다.");
                 }
 
+                var analysisText = string.Join(Environment.NewLine + Environment.NewLine, messages);
                 AppendLog("학습 로그 분석: " + string.Join(" / ", messages));
-                MessageBox.Show(this, string.Join(Environment.NewLine + Environment.NewLine, messages), "학습 로그 분석", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SaveTrainingAnalysisSummary(dialog.SelectedPath, analysisText);
+                MessageBox.Show(this, analysisText, "학습 로그 분석", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 LayoutTrainPanel();
                 if (directionLoaded)
                 {
@@ -2354,6 +2360,41 @@ namespace TeamApp
             catch (Exception ex)
             {
                 MessageBox.Show("학습 로그/방향 데이터를 분석하지 못했습니다: " + ex.Message, "학습 로그 분석", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void SaveTrainingAnalysisSummary(string selectedPath, string summary)
+        {
+            try
+            {
+                var folder = ResolveTrainingRunFolder(selectedPath);
+                if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                {
+                    folder = Directory.Exists(selectedPath) ? selectedPath : rootFolder;
+                }
+                if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                {
+                    return;
+                }
+
+                var fileName = "teamapp_training_analysis_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".txt";
+                var path = Path.Combine(folder, fileName);
+                File.WriteAllText(path, summary, Encoding.UTF8);
+                AppendLog("학습 분석 로그 저장: " + path);
+
+                var answer = MessageBox.Show(this, "학습 분석 로그를 저장했습니다. 바로 열까요?" + Environment.NewLine + path, "학습 로그 분석", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (answer == DialogResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = path,
+                        UseShellExecute = true
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("학습 분석 로그 저장 실패: " + ex.Message);
             }
         }
 
@@ -2739,7 +2780,7 @@ namespace TeamApp
         private void btnCannyPreviewAll_Click(object? sender, EventArgs e)
         {
             cannyPreviewAll = !cannyPreviewAll;
-            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 미리보기" : "전체 캐니 미리";
+            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 보기" : "전체사진 캐니 미리";
             btnCannyPreviewAll.BackColor = cannyPreviewAll ? Color.LightSteelBlue : SystemColors.Control;
             var current = CurrentRecord();
             if (current != null)
@@ -2756,7 +2797,7 @@ namespace TeamApp
             var targets = GetTargetRecordsForBatch();
             if (targets.Count == 0)
             {
-                MessageBox.Show("캐니 에지를 적용할 프레임을 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("선택사진 캐니 변경을 적용할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -2782,10 +2823,10 @@ namespace TeamApp
                 LoadImage(current);
             }
             ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
-            AppendLog($"캐니 에지 적용: {success}/{targets.Count}개");
+            AppendLog($"선택사진 캐니 변경 적용: {success}/{targets.Count}개 (적응형 도로선 보존 방식)");
             if (success == 0)
             {
-                MessageBox.Show("캐니 에지를 적용하지 못했습니다. OpenCvSharp 패키지 복원 여부와 이미지 파일 상태를 확인하세요.", "캐니 에지", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("선택사진 캐니 변경을 적용하지 못했습니다. OpenCvSharp 패키지 복원 여부와 이미지 파일 상태를 확인하세요.", "캐니 에지", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -2796,23 +2837,10 @@ namespace TeamApp
                 throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
             }
 
-            var tempPath = Path.Combine(Path.GetTempPath(), "teamapp_canny_preview_" + Guid.NewGuid().ToString("N") + ".jpg");
+            var tempPath = Path.Combine(Path.GetTempPath(), "teamapp_canny_preview_" + Guid.NewGuid().ToString("N") + ".png");
             try
             {
-                using var source = OpenCvSharp.Cv2.ImRead(imagePath, OpenCvSharp.ImreadModes.Color);
-                if (source.Empty())
-                {
-                    throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다.");
-                }
-
-                using var gray = new OpenCvSharp.Mat();
-                using var blurred = new OpenCvSharp.Mat();
-                using var edges = new OpenCvSharp.Mat();
-                using var output = new OpenCvSharp.Mat();
-                OpenCvSharp.Cv2.CvtColor(source, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
-                OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 1.2);
-                OpenCvSharp.Cv2.Canny(blurred, edges, 60, 160);
-                OpenCvSharp.Cv2.CvtColor(edges, output, OpenCvSharp.ColorConversionCodes.GRAY2BGR);
+                using var output = CreateCannyRoadEdgeMat(imagePath, 50, 200);
                 if (!OpenCvSharp.Cv2.ImWrite(tempPath, output))
                 {
                     throw new InvalidOperationException("캐니 미리보기 이미지를 생성하지 못했습니다.");
@@ -2845,38 +2873,115 @@ namespace TeamApp
                 throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
             }
 
+            using var bitmap = CreateCannyRoadEdgeBitmap(imagePath, 50, 200);
             BackupImageIfNeeded(imagePath);
-            using var source = OpenCvSharp.Cv2.ImRead(imagePath, OpenCvSharp.ImreadModes.Color);
-            if (source.Empty())
-            {
-                throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다.");
-            }
+            SaveBitmapAtomically(bitmap, imagePath);
+        }
 
-            using var gray = new OpenCvSharp.Mat();
-            using var blurred = new OpenCvSharp.Mat();
-            using var edges = new OpenCvSharp.Mat();
-            using var output = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.CvtColor(source, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
-            OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 1.2);
-            OpenCvSharp.Cv2.Canny(blurred, edges, 60, 160);
-            OpenCvSharp.Cv2.CvtColor(edges, output, OpenCvSharp.ColorConversionCodes.GRAY2BGR);
+        private Bitmap CreateCannyRoadEdgeBitmap(string imagePath, int lowThreshold, int highThreshold)
+        {
+            using var output = CreateCannyRoadEdgeMat(imagePath, lowThreshold, highThreshold);
+            OpenCvSharp.Cv2.ImEncode(".png", output, out var encoded);
+            using var ms = new MemoryStream(encoded);
+            return new Bitmap(ms);
+        }
 
-            var directory = Path.GetDirectoryName(imagePath) ?? string.Empty;
-            var tempPath = Path.Combine(directory, Path.GetFileNameWithoutExtension(imagePath) + ".canny.tmp" + Path.GetExtension(imagePath));
+        private OpenCvSharp.Mat CreateCannyRoadEdgeMat(string imagePath, int lowThreshold, int highThreshold)
+        {
+            var srcPath = imagePath;
             try
             {
-                if (!OpenCvSharp.Cv2.ImWrite(tempPath, output))
+                var editedBackupPath = GetEditedBackupPath(imagePath);
+                if (!string.IsNullOrWhiteSpace(editedBackupPath) && File.Exists(editedBackupPath))
                 {
-                    throw new InvalidOperationException("OpenCV 이미지 저장에 실패했습니다.");
+                    srcPath = editedBackupPath;
                 }
-                ReplaceFileAtomically(tempPath, imagePath);
+            }
+            catch
+            {
+                srcPath = imagePath;
+            }
+
+            using var source = OpenCvSharp.Cv2.ImRead(srcPath, OpenCvSharp.ImreadModes.Color);
+            if (source.Empty())
+            {
+                throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다: " + imagePath);
+            }
+
+            OpenCvSharp.Mat? resized = null;
+            OpenCvSharp.Mat work = source;
+            var scale = 1.0;
+            try
+            {
+                if (source.Width < 320)
+                {
+                    scale = 320.0 / Math.Max(1, source.Width);
+                    var newW = (int)Math.Round(source.Width * scale);
+                    var newH = (int)Math.Round(source.Height * scale);
+                    resized = new OpenCvSharp.Mat();
+                    OpenCvSharp.Cv2.Resize(source, resized, new OpenCvSharp.Size(newW, newH), 0, 0, OpenCvSharp.InterpolationFlags.Linear);
+                    work = resized;
+                }
+
+                using var gray = new OpenCvSharp.Mat();
+                using var blurred = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.CvtColor(work, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
+                OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 0);
+
+                // 팀원 개선사항 반영: 조명 변화가 있는 시뮬레이터 도로에서도 얇은 차선/가장자리선을 살리기 위한 적응형 임계값 방식.
+                using var adaptive = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.AdaptiveThreshold(
+                    blurred,
+                    adaptive,
+                    255,
+                    OpenCvSharp.AdaptiveThresholdTypes.GaussianC,
+                    OpenCvSharp.ThresholdTypes.Binary,
+                    blockSize: 91,
+                    c: -25);
+
+                using var openKernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(3, 3));
+                OpenCvSharp.Cv2.MorphologyEx(adaptive, adaptive, OpenCvSharp.MorphTypes.Open, openKernel);
+
+                using var closeKernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(15, 15));
+                OpenCvSharp.Cv2.MorphologyEx(adaptive, adaptive, OpenCvSharp.MorphTypes.Close, closeKernel);
+
+                OpenCvSharp.Cv2.FindContours(
+                    adaptive,
+                    out OpenCvSharp.Point[][] contours,
+                    out _,
+                    OpenCvSharp.RetrievalModes.External,
+                    OpenCvSharp.ContourApproximationModes.ApproxSimple);
+
+                using var contourEdges = new OpenCvSharp.Mat(work.Size(), OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
+                const double minContourLength = 100.0;
+                foreach (var contour in contours)
+                {
+                    var length = OpenCvSharp.Cv2.ArcLength(contour, closed: false);
+                    if (length > minContourLength)
+                    {
+                        OpenCvSharp.Cv2.DrawContours(contourEdges, new[] { contour }, 0, OpenCvSharp.Scalar.White, 1);
+                    }
+                }
+
+                // 기본 Canny 결과를 보조로 합성해 흰색/노란색 선이 약한 프레임에서도 시각적 단서가 남도록 한다.
+                using var rawEdges = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.Canny(blurred, rawEdges, lowThreshold, highThreshold);
+                using var mergedEdges = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.BitwiseOr(contourEdges, rawEdges, mergedEdges);
+
+                using var finalEdges = scale != 1.0 ? new OpenCvSharp.Mat() : mergedEdges.Clone();
+                if (scale != 1.0)
+                {
+                    OpenCvSharp.Cv2.Resize(mergedEdges, finalEdges, new OpenCvSharp.Size(source.Width, source.Height), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                }
+
+                var output = new OpenCvSharp.Mat(source.Size(), OpenCvSharp.MatType.CV_8UC3, OpenCvSharp.Scalar.Black);
+                output.SetTo(new OpenCvSharp.Scalar(255, 255, 255), finalEdges);
+                return output;
             }
             finally
             {
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
+                resized?.Dispose();
             }
         }
 
