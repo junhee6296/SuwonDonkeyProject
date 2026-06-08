@@ -284,7 +284,7 @@ namespace TeamApp
             lblEditHint.AutoEllipsis = true;
             lblEditHint.Location = new Point(10, 20);
             lblEditHint.Name = "lblEditHint";
-            lblEditHint.Size = new Size(360, 18);
+            lblEditHint.Size = new Size(490, 18);
             lblEditHint.TabIndex = 0;
             lblEditHint.Text = "이미지 위에서 마우스로 드래그해 영역을 선택한 뒤 편집 버튼을 누르세요.";
             // 

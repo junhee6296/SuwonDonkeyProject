@@ -11,11 +11,13 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Forms.VisualStyles;
+using OpenCvSharp;
+// OpenCvSharp.Extensions may not be available in this build; use Cv2.ImEncode fallback for Mat->Bitmap conversion
+using Point = System.Drawing.Point;
 
 namespace TeamApp
 {
@@ -23,8 +25,7 @@ namespace TeamApp
     {
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = false,
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+            WriteIndented = false
         };
 
         private readonly List<FrameRecord> allFrames = new List<FrameRecord>();
@@ -60,7 +61,6 @@ namespace TeamApp
             {
                 return;
             }
-
             InitializeRuntime();
         }
 
@@ -75,6 +75,7 @@ namespace TeamApp
             chkAnomalyOnly.CheckedChanged += chkAnomalyOnly_CheckedChanged;
             chkDeletedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
             chkEditedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
+            btnCanny.Click += btnCanny_Click;
             btnClearCheckedFrames.Text = "전체 해제";
             btnDelete.Text = "이미지 삭제";
             btnUndo.Text = "삭제 이미지 복구";
@@ -185,9 +186,7 @@ namespace TeamApp
 
             picFrame.SetBounds(12, 22, innerW, pictureHeight);
             grpImageEdit.SetBounds(12, picFrame.Bottom + 8, innerW, editHeight);
-            var cannyW = 92;
-            btnCanny.SetBounds(Math.Max(10, grpImageEdit.ClientSize.Width - cannyW - 12), 16, cannyW, 23);
-            lblEditHint.SetBounds(10, 20, Math.Max(120, btnCanny.Left - 20), 18);
+            lblEditHint.SetBounds(10, 20, Math.Max(120, grpImageEdit.ClientSize.Width - 20), 18);
             cmbMaskMode.SetBounds(10, 44, 80, 23);
             var btnY = 42;
             var buttonW = Math.Max(80, (grpImageEdit.ClientSize.Width - 110) / 4);
@@ -2238,86 +2237,6 @@ namespace TeamApp
             ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
             AppendLog($"이미지 영역 가리기 {(autoApplied ? "자동 " : string.Empty)}적용: {success}/{targets.Count}개, 영역={rect}");
             return success > 0;
-        }
-
-        private void btnCanny_Click(object? sender, EventArgs e)
-        {
-            var targets = GetTargetRecordsForBatch();
-            if (targets.Count == 0)
-            {
-                MessageBox.Show("캐니 에지를 적용할 프레임을 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            var success = 0;
-            foreach (var record in targets)
-            {
-                try
-                {
-                    ApplyCannyEdgeToImageFile(ResolveImagePath(record));
-                    record.Edited = true;
-                    success++;
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"캐니 에지 적용 실패: {record.ImageFile} / {ex.Message}");
-                }
-            }
-
-            SaveUiMarks();
-            var current = CurrentRecord();
-            if (current != null)
-            {
-                LoadImage(current);
-            }
-            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
-            AppendLog($"캐니 에지 적용: {success}/{targets.Count}개");
-            if (success == 0)
-            {
-                MessageBox.Show("캐니 에지를 적용하지 못했습니다. OpenCvSharp 패키지 복원 여부와 이미지 파일 상태를 확인하세요.", "캐니 에지", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }
-
-        private void ApplyCannyEdgeToImageFile(string imagePath)
-        {
-            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
-            {
-                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
-            }
-
-            BackupImageIfNeeded(imagePath);
-            using var source = OpenCvSharp.Cv2.ImRead(imagePath, OpenCvSharp.ImreadModes.Color);
-            if (source.Empty())
-            {
-                throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다.");
-            }
-
-            using var gray = new OpenCvSharp.Mat();
-            using var blurred = new OpenCvSharp.Mat();
-            using var edges = new OpenCvSharp.Mat();
-            using var output = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.CvtColor(source, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
-            OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 1.2);
-            OpenCvSharp.Cv2.Canny(blurred, edges, 60, 160);
-            OpenCvSharp.Cv2.CvtColor(edges, output, OpenCvSharp.ColorConversionCodes.GRAY2BGR);
-
-            var directory = Path.GetDirectoryName(imagePath) ?? string.Empty;
-            var tempPath = Path.Combine(directory, Path.GetFileNameWithoutExtension(imagePath) + ".canny.tmp" + Path.GetExtension(imagePath));
-            try
-            {
-                if (!OpenCvSharp.Cv2.ImWrite(tempPath, output))
-                {
-                    throw new InvalidOperationException("OpenCV 이미지 저장에 실패했습니다.");
-                }
-                ReplaceFileAtomically(tempPath, imagePath);
-            }
-            finally
-            {
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
-            }
         }
 
         private void btnReplaceRegion_Click(object? sender, EventArgs e)
@@ -4452,6 +4371,8 @@ namespace TeamApp
 
     internal sealed class ColoredCheckedListBox : CheckedListBox
     {
+        private int lastCheckAnchorIndex = -1;
+
         public ColoredCheckedListBox()
         {
             DrawMode = DrawMode.OwnerDrawFixed;
@@ -4459,36 +4380,49 @@ namespace TeamApp
         }
 
         public Func<int, FrameListVisualState>? ResolveVisualState { get; set; }
-        private int lastCheckClickIndex = -1;
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             var index = IndexFromPoint(e.Location);
             if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
             {
-                Focus();
+                // preserve previous selection to use as anchor when shift-clicking
+                var previousSelected = SelectedIndex;
                 SelectedIndex = index;
-                var nextState = !GetItemChecked(index);
-                if ((ModifierKeys & Keys.Shift) == Keys.Shift && lastCheckClickIndex >= 0 && lastCheckClickIndex < Items.Count)
+
+                var shiftPressed = (Control.ModifierKeys & Keys.Shift) == Keys.Shift;
+
+                // Determine an anchor index: prefer the last recorded anchor, otherwise previous selection, otherwise clicked index
+                var anchor = lastCheckAnchorIndex >= 0 ? lastCheckAnchorIndex : (previousSelected >= 0 ? previousSelected : index);
+
+                if (shiftPressed && anchor >= 0 && anchor != index)
                 {
-                    var start = Math.Min(lastCheckClickIndex, index);
-                    var end = Math.Max(lastCheckClickIndex, index);
+                    var start = Math.Min(anchor, index);
+                    var end = Math.Max(anchor, index);
+                    // Invert checked state for the whole range
                     for (var i = start; i <= end; i++)
                     {
-                        SetItemChecked(i, nextState);
+                        SetItemChecked(i, !GetItemChecked(i));
                     }
                     Invalidate();
+                    // keep the original anchor so multiple shift-clicks are relative to the same start
+                    return;
                 }
-                else
-                {
-                    SetItemChecked(index, nextState);
-                    Invalidate(GetItemRectangle(index));
-                }
-                lastCheckClickIndex = index;
+
+                // Normal single toggle
+                SetItemChecked(index, !GetItemChecked(index));
+                Invalidate(GetItemRectangle(index));
+                // Update anchor for future shift operations
+                lastCheckAnchorIndex = index;
                 return;
             }
 
             base.OnMouseDown(e);
+            // If user clicked non-checkbox area without shift, update anchor to that item so subsequent shift-clicks use it
+            if (index >= 0 && index < Items.Count && (Control.ModifierKeys & Keys.Shift) != Keys.Shift)
+            {
+                lastCheckAnchorIndex = index;
+            }
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
