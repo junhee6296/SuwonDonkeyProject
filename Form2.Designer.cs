@@ -37,6 +37,7 @@ namespace TeamApp
         private CheckBox chkManualEdit = null!;
         private TextBox txtCommand = null!;
         private Button btnRun = null!;
+        private Button btnStop = null!;
         private Button btnClose = null!;
         private GroupBox groupLog = null!;
         private TextBox txtLog = null!;
@@ -113,6 +114,7 @@ namespace TeamApp
             chkManualEdit = new CheckBox();
             txtCommand = new TextBox();
             btnRun = new Button();
+            btnStop = new Button();
             btnClose = new Button();
             groupLog = new GroupBox();
             txtLog = new TextBox();
@@ -550,12 +552,24 @@ namespace TeamApp
             btnRun.UseVisualStyleBackColor = true;
             btnRun.Click += btnRun_Click;
             // 
+            // btnStop
+            // 
+            btnStop.Enabled = false;
+            btnStop.Font = new Font("맑은 고딕", 10F, FontStyle.Bold, GraphicsUnit.Point, 129);
+            btnStop.Location = new Point(184, 803);
+            btnStop.Name = "btnStop";
+            btnStop.Size = new Size(120, 38);
+            btnStop.TabIndex = 14;
+            btnStop.Text = "학습 중지";
+            btnStop.UseVisualStyleBackColor = true;
+            btnStop.Click += btnStop_Click;
+            // 
             // btnClose
             // 
-            btnClose.Location = new Point(184, 803);
+            btnClose.Location = new Point(314, 803);
             btnClose.Name = "btnClose";
             btnClose.Size = new Size(90, 38);
-            btnClose.TabIndex = 14;
+            btnClose.TabIndex = 15;
             btnClose.Text = "닫기";
             btnClose.UseVisualStyleBackColor = true;
             btnClose.Click += btnClose_Click;
@@ -798,6 +812,7 @@ namespace TeamApp
             Controls.Add(txtCommand);
             Controls.Add(groupMetrics);
             Controls.Add(btnRun);
+            Controls.Add(btnStop);
             Controls.Add(btnClose);
             Controls.Add(groupLog);
             Font = new Font("맑은 고딕", 9F, FontStyle.Regular, GraphicsUnit.Point, 129);
