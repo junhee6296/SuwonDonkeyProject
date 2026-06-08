@@ -11,13 +11,11 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Forms.VisualStyles;
-using OpenCvSharp;
-// OpenCvSharp.Extensions may not be available in this build; use Cv2.ImEncode fallback for Mat->Bitmap conversion
-using Point = System.Drawing.Point;
 
 namespace TeamApp
 {
@@ -25,7 +23,8 @@ namespace TeamApp
     {
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = false
+            WriteIndented = false,
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
         };
 
         private readonly List<FrameRecord> allFrames = new List<FrameRecord>();
@@ -40,10 +39,17 @@ namespace TeamApp
         private string trainingSshPassword = string.Empty;
         private bool trainingUseSshPasswordInput;
         private bool trainingCommandGenerated;
+        private Form2? trainingDialog;
+        private readonly Dictionary<string, TrainingPreviewDirection> trainingPreviewByImageName = new Dictionary<string, TrainingPreviewDirection>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, TrainingPreviewDirection> trainingPreviewByIndex = new Dictionary<int, TrainingPreviewDirection>();
+        private string trainingPreviewSourceFolder = string.Empty;
+        private bool cannyPreviewAll;
         private const string TrainingCommandPlaceholder = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
         private const string SshPasswordPlaceholder = "{SSH_PASSWORD}";
         private readonly HashSet<int> checkedFrameOrders = new HashSet<int>();
         private int currentVisibleIndex = -1;
+        private Process? activeInteractiveTrainingProcess;
+        private readonly object activeInteractiveTrainingProcessLock = new object();
 
         private string loadedImagePath = string.Empty;
         private Rectangle? selectedImageRect;
@@ -61,6 +67,7 @@ namespace TeamApp
             {
                 return;
             }
+
             InitializeRuntime();
         }
 
@@ -75,7 +82,6 @@ namespace TeamApp
             chkAnomalyOnly.CheckedChanged += chkAnomalyOnly_CheckedChanged;
             chkDeletedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
             chkEditedOnly.CheckedChanged += chkStatusFilter_CheckedChanged;
-            btnCanny.Click += btnCanny_Click;
             btnClearCheckedFrames.Text = "전체 해제";
             btnDelete.Text = "이미지 삭제";
             btnUndo.Text = "삭제 이미지 복구";
@@ -89,7 +95,9 @@ namespace TeamApp
             btnTrain.Visible = false;
             btnCheckDonkey.Visible = false;
             btnTrainingPaths.Text = "AI 학습";
+            EnsureTrainingPreviewButton();
             lblHint.Text = "AI 학습 버튼을 눌러 학습 환경, 경로, 실행 명령, 학습 결과를 별도 창에서 관리하세요.";
+            EnsureDrivingOverlayControls();
             lstFrames.CheckOnClick = false;
             lstFrames.ResolveVisualState = index => index >= 0 && index < visibleFrames.Count
                 ? new FrameListVisualState(visibleFrames[index].Deleted, visibleFrames[index].Edited, visibleFrames[index].IsAnomaly)
@@ -180,20 +188,45 @@ namespace TeamApp
             var innerW = Math.Max(320, w - 24);
             var graphHeight = 70;
             var bottomInfoHeight = 176;
-            var editHeight = 78;
+            var editHeight = 112;
             var deleteHeight = 64;
-            var pictureHeight = Math.Max(190, h - 24 - editHeight - deleteHeight - 22 - 45 - 36 - bottomInfoHeight - graphHeight);
+            var pictureHeight = Math.Max(180, h - 24 - editHeight - deleteHeight - 22 - 45 - 36 - bottomInfoHeight - graphHeight);
 
             picFrame.SetBounds(12, 22, innerW, pictureHeight);
             grpImageEdit.SetBounds(12, picFrame.Bottom + 8, innerW, editHeight);
-            lblEditHint.SetBounds(10, 20, Math.Max(120, grpImageEdit.ClientSize.Width - 20), 18);
-            cmbMaskMode.SetBounds(10, 44, 80, 23);
-            var btnY = 42;
-            var buttonW = Math.Max(80, (grpImageEdit.ClientSize.Width - 110) / 4);
+
+            var editW = grpImageEdit.ClientSize.Width;
+            lblEditHint.SetBounds(10, 20, Math.Max(120, editW - 20), 18);
+
+            var topRowY = 42;
+            var cannyW = 138;
+            var cannyPreviewW = 132;
+            btnCanny.Text = "선택사진 캐니 변경";
+            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 보기" : "전체사진 캐니 미리";
+            btnCanny.SetBounds(Math.Max(10, editW - cannyW - 12), topRowY, cannyW, 24);
+            btnCannyPreviewAll.SetBounds(Math.Max(10, btnCanny.Left - cannyPreviewW - 8), topRowY, cannyPreviewW, 24);
+
+            var trainedW = 90;
+            var drivingW = 104;
+            chkDrivingOverlay.Text = "방향/스로틀";
+            chkDrivingOverlay.SetBounds(10, topRowY, drivingW, 24);
+            chkTrainedDirectionOverlay.Text = "학습 방향";
+            chkTrainedDirectionOverlay.SetBounds(chkDrivingOverlay.Right + 8, topRowY, trainedW, 24);
+
+            if (chkTrainedDirectionOverlay.Right + 12 > btnCannyPreviewAll.Left)
+            {
+                // 화면 폭이 좁은 경우에는 미리보기/캐니 버튼을 우측에 유지하고 체크박스 폭을 줄여 겹침을 방지한다.
+                chkDrivingOverlay.SetBounds(10, topRowY, Math.Max(76, Math.Min(drivingW, btnCannyPreviewAll.Left - 104)), 24);
+                chkTrainedDirectionOverlay.SetBounds(chkDrivingOverlay.Right + 6, topRowY, Math.Max(70, btnCannyPreviewAll.Left - chkDrivingOverlay.Right - 12), 24);
+            }
+
+            cmbMaskMode.SetBounds(10, 76, 80, 23);
+            var btnY = 74;
+            var buttonW = Math.Max(72, (grpImageEdit.ClientSize.Width - 110) / 4);
             btnMaskRegion.SetBounds(98, btnY, buttonW, 27);
             btnReplaceRegion.SetBounds(btnMaskRegion.Right + 6, btnY, buttonW + 10, 27);
             btnClearSelection.SetBounds(btnReplaceRegion.Right + 6, btnY, buttonW, 27);
-            btnRestoreImage.SetBounds(btnClearSelection.Right + 6, btnY, Math.Max(90, grpImageEdit.ClientSize.Width - btnClearSelection.Right - 16), 27);
+            btnRestoreImage.SetBounds(btnClearSelection.Right + 6, btnY, Math.Max(86, grpImageEdit.ClientSize.Width - btnClearSelection.Right - 16), 27);
 
             grpDeleteOps.SetBounds(12, grpImageEdit.Bottom + 8, innerW, deleteHeight);
             var deleteButtonW = Math.Max(120, (grpDeleteOps.ClientSize.Width - 30) / 2);
@@ -276,12 +309,36 @@ namespace TeamApp
             txtTrainCommand.Visible = false;
             btnTrain.Visible = false;
             btnCheckDonkey.Visible = false;
+            EnsureTrainingPreviewButton();
 
-            var buttonWidth = Math.Max(160, Math.Min(260, w - 28));
+            var buttonWidth = Math.Max(120, (w - 38) / 2);
             btnTrainingPaths.Text = "AI 학습";
             btnTrainingPaths.SetBounds(14, 28, buttonWidth, 38);
+            if (btnLoadTrainingPreview != null)
+            {
+                btnLoadTrainingPreview.SetBounds(btnTrainingPaths.Right + 10, 28, Math.Max(120, w - btnTrainingPaths.Right - 24), 38);
+                btnLoadTrainingPreview.Visible = true;
+            }
+
             lblHint.SetBounds(14, 74, Math.Max(180, w - 28), Math.Max(34, grpTrain.ClientSize.Height - 82));
-            lblHint.Text = "학습 환경/경로/명령 실행/성공률은 AI 학습 창에서 관리합니다.";
+            var source = string.IsNullOrWhiteSpace(trainingPreviewSourceFolder)
+                ? "학습 로그/방향 데이터를 불러오지 않았습니다."
+                : "학습 로그/방향: " + Path.GetFileName(trainingPreviewSourceFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            lblHint.Text = "AI 학습 창에서 환경/명령/성공률을 관리합니다. " + source;
+        }
+
+        private void EnsureTrainingPreviewButton()
+        {
+            if (btnLoadTrainingPreview == null)
+            {
+                return;
+            }
+
+            btnLoadTrainingPreview.Text = "학습 로그 분석";
+            if (!grpTrain.Controls.Contains(btnLoadTrainingPreview))
+            {
+                grpTrain.Controls.Add(btnLoadTrainingPreview);
+            }
         }
 
         private void LayoutLogPanel()
@@ -537,6 +594,11 @@ namespace TeamApp
                     return false;
                 }
 
+                var userAngle = GetNullableDouble(root, "user/angle");
+                var userThrottle = GetNullableDouble(root, "user/throttle");
+                var pilotAngle = GetNullableDouble(root, "pilot/angle");
+                var pilotThrottle = GetNullableDouble(root, "pilot/throttle");
+
                 record = new FrameRecord
                 {
                     GlobalOrder = globalOrder,
@@ -547,8 +609,12 @@ namespace TeamApp
                     SessionId = GetString(root, "_session_id"),
                     TimestampMs = GetNullableLong(root, "_timestamp_ms"),
                     ImageFile = imageFile,
-                    Angle = GetNullableDouble(root, "user/angle", "pilot/angle"),
-                    Throttle = GetNullableDouble(root, "user/throttle", "pilot/throttle"),
+                    UserAngle = userAngle,
+                    UserThrottle = userThrottle,
+                    PilotAngle = pilotAngle,
+                    PilotThrottle = pilotThrottle,
+                    Angle = userAngle ?? pilotAngle,
+                    Throttle = userThrottle ?? pilotThrottle,
                     Mode = GetString(root, "user/mode", "pilot/mode")
                 };
                 return true;
@@ -1053,9 +1119,17 @@ namespace TeamApp
 
             try
             {
-                using var stream = File.OpenRead(imagePath);
-                using var source = Image.FromStream(stream);
-                var copy = new Bitmap(source);
+                Bitmap copy;
+                if (cannyPreviewAll)
+                {
+                    copy = CreateCannyPreviewBitmap(imagePath);
+                }
+                else
+                {
+                    using var stream = File.OpenRead(imagePath);
+                    using var source = Image.FromStream(stream);
+                    copy = new Bitmap(source);
+                }
                 ReplaceFrameImage(copy);
             }
             catch (Exception ex)
@@ -2022,8 +2096,49 @@ namespace TeamApp
             }
         }
 
+        private void EnsureDrivingOverlayControls()
+        {
+            if (grpImageEdit == null)
+            {
+                return;
+            }
+
+            chkDrivingOverlay.Text = "방향/스로틀";
+            chkDrivingOverlay.Checked = true;
+            chkDrivingOverlay.AutoSize = false;
+            chkTrainedDirectionOverlay.Text = "학습 방향";
+            chkTrainedDirectionOverlay.Checked = true;
+            chkTrainedDirectionOverlay.AutoSize = false;
+            btnCanny.Text = "선택사진 캐니 변경";
+            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 보기" : "전체사진 캐니 미리";
+
+            if (!grpImageEdit.Controls.Contains(chkDrivingOverlay))
+            {
+                grpImageEdit.Controls.Add(chkDrivingOverlay);
+            }
+            if (!grpImageEdit.Controls.Contains(chkTrainedDirectionOverlay))
+            {
+                grpImageEdit.Controls.Add(chkTrainedDirectionOverlay);
+            }
+        }
+
+        private void chkDrivingOverlay_CheckedChanged(object? sender, EventArgs e)
+        {
+            picFrame.Invalidate();
+        }
+
+        private void chkTrainedDirectionOverlay_CheckedChanged(object? sender, EventArgs e)
+        {
+            picFrame.Invalidate();
+        }
+
         private void picFrame_Paint(object? sender, PaintEventArgs e)
         {
+            if (picFrame.Image != null)
+            {
+                DrawDrivingOverlay(e.Graphics);
+            }
+
             if (!selectedImageRect.HasValue || picFrame.Image == null)
             {
                 return;
@@ -2039,6 +2154,429 @@ namespace TeamApp
             using var brush = new SolidBrush(Color.FromArgb(40, Color.Red));
             e.Graphics.FillRectangle(brush, controlRect);
             e.Graphics.DrawRectangle(pen, controlRect);
+        }
+
+        private void DrawDrivingOverlay(Graphics graphics)
+        {
+            if (chkDrivingOverlay != null && !chkDrivingOverlay.Checked &&
+                (chkTrainedDirectionOverlay == null || !chkTrainedDirectionOverlay.Checked))
+            {
+                return;
+            }
+
+            var record = CurrentRecord();
+            if (record == null || picFrame.Image == null)
+            {
+                return;
+            }
+
+            var viewport = GetImageViewport();
+            if (viewport.Width <= 5 || viewport.Height <= 5)
+            {
+                return;
+            }
+
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var angle = record.Angle.GetValueOrDefault();
+            var throttle = record.Throttle.GetValueOrDefault();
+            var directionText = DescribeDirection(angle);
+            var throttleState = DescribeThrottle(throttle);
+            var arrowColor = ThrottleToOverlayColor(throttle);
+            Rectangle? infoBox = null;
+
+            if (chkDrivingOverlay == null || chkDrivingOverlay.Checked)
+            {
+                DrawDirectionArrow(graphics, viewport, angle, arrowColor, 0, false);
+                infoBox = DrawOverlayInfoBox(graphics, viewport, new[]
+                {
+                    "주행 데이터 분석",
+                    "방향: " + directionText,
+                    "angle: " + FormatCompact(record.Angle) + " / throttle: " + FormatCompact(record.Throttle),
+                    "상태: " + throttleState
+                }, arrowColor);
+            }
+
+            if (chkTrainedDirectionOverlay != null && chkTrainedDirectionOverlay.Checked &&
+                TryGetTrainingPreviewDirection(record, out var preview))
+            {
+                var pilotDirection = DescribeDirection(preview.Angle);
+                DrawDirectionArrow(graphics, viewport, preview.Angle, Color.DeepSkyBlue, 18, true);
+                DrawTrainedDirectionBadge(
+                    graphics,
+                    viewport,
+                    infoBox,
+                    "학습 데이터 방향: " + pilotDirection + "  t=" + FormatCompact(preview.Throttle),
+                    preview.SourceLabel);
+            }
+        }
+
+        private void DrawDirectionArrow(Graphics graphics, Rectangle viewport, double angle, Color color, int yOffset, bool dashed)
+        {
+            var start = new PointF(viewport.Left + viewport.Width / 2f, viewport.Bottom - Math.Max(18, viewport.Height * 0.12f) - yOffset);
+            var clampedAngle = Math.Max(-1.0, Math.Min(1.0, angle));
+            var end = new PointF(
+                start.X + (float)(clampedAngle * viewport.Width * 0.34),
+                start.Y - viewport.Height * 0.38f);
+
+            using var pen = new Pen(color, dashed ? 3f : 4f)
+            {
+                EndCap = LineCap.ArrowAnchor,
+                StartCap = LineCap.Round
+            };
+            if (dashed)
+            {
+                pen.DashStyle = DashStyle.Dash;
+            }
+            graphics.DrawLine(pen, start, end);
+        }
+
+        private Rectangle DrawOverlayInfoBox(Graphics graphics, Rectangle viewport, string[] lines, Color accentColor)
+        {
+            var maxWidth = Math.Min(280, Math.Max(170, viewport.Width - 16));
+            var boxHeight = 118;
+            var box = new Rectangle(viewport.Left + 8, viewport.Top + 8, maxWidth, boxHeight);
+            using var back = new SolidBrush(Color.FromArgb(210, 18, 18, 18));
+            using var border = new Pen(accentColor, 2f);
+            graphics.FillRectangle(back, box);
+            graphics.DrawRectangle(border, box);
+
+            var textRect = new Rectangle(box.Left + 8, box.Top + 7, box.Width - 16, box.Height - 14);
+            var text = string.Join(Environment.NewLine, lines);
+            using var font = new Font("맑은 고딕", 8.0F, FontStyle.Bold, GraphicsUnit.Point, 129);
+            TextRenderer.DrawText(
+                graphics,
+                text,
+                font,
+                textRect,
+                Color.White,
+                TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
+            return box;
+        }
+
+        private void DrawTrainedDirectionBadge(Graphics graphics, Rectangle viewport, Rectangle? avoidBox, string directionText, string sourceLabel)
+        {
+            var maxWidth = Math.Min(280, Math.Max(170, viewport.Width - 16));
+            var box = new Rectangle(viewport.Right - maxWidth - 8, viewport.Top + 8, maxWidth, 54);
+            if (avoidBox.HasValue && box.IntersectsWith(avoidBox.Value))
+            {
+                box = new Rectangle(viewport.Left + 8, Math.Min(viewport.Bottom - 62, avoidBox.Value.Bottom + 8), maxWidth, 54);
+            }
+
+            using var back = new SolidBrush(Color.FromArgb(220, 0, 72, 130));
+            using var border = new Pen(Color.DeepSkyBlue, 2f);
+            graphics.FillRectangle(back, box);
+            graphics.DrawRectangle(border, box);
+            var text = directionText + Environment.NewLine + "기준: " + sourceLabel;
+            using var font = new Font("맑은 고딕", 8.0F, FontStyle.Bold, GraphicsUnit.Point, 129);
+            TextRenderer.DrawText(
+                graphics,
+                text,
+                font,
+                new Rectangle(box.Left + 7, box.Top + 5, box.Width - 14, box.Height - 10),
+                Color.White,
+                TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis);
+        }
+
+        private bool TryGetTrainingPreviewDirection(FrameRecord record, out TrainingPreviewDirection preview)
+        {
+            preview = null!;
+            if (record == null || trainingPreviewByImageName.Count == 0 && trainingPreviewByIndex.Count == 0)
+            {
+                return false;
+            }
+
+            var fileName = Path.GetFileName(record.ImageFile ?? string.Empty);
+            if (!string.IsNullOrWhiteSpace(fileName) && trainingPreviewByImageName.TryGetValue(fileName, out preview))
+            {
+                return true;
+            }
+
+            if (trainingPreviewByIndex.TryGetValue(record.Index, out preview))
+            {
+                return true;
+            }
+
+            if (trainingPreviewByIndex.TryGetValue(record.GlobalOrder, out preview))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private void btnLoadTrainingPreview_Click(object? sender, EventArgs e)
+        {
+            using var dialog = new FolderBrowserDialog
+            {
+                Description = "학습 로그 또는 학습 데이터 폴더를 선택하세요. _training_runs, mycar, data, _training_sets 하위 tub 폴더를 지원합니다."
+            };
+
+            if (Directory.Exists(rootFolder))
+            {
+                dialog.SelectedPath = rootFolder;
+            }
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            var messages = new List<string>();
+            var directionLoaded = false;
+            try
+            {
+                if (TryAnalyzeTrainingLogFolder(dialog.SelectedPath, out var summary))
+                {
+                    messages.Add(summary);
+                }
+
+                try
+                {
+                    LoadTrainingPreviewDirections(dialog.SelectedPath);
+                    chkTrainedDirectionOverlay.Checked = true;
+                    directionLoaded = true;
+                    messages.Add($"학습 방향 미리보기 {trainingPreviewByImageName.Count + trainingPreviewByIndex.Count}개를 불러왔습니다.");
+                }
+                catch (Exception ex) when (messages.Count > 0)
+                {
+                    messages.Add("선택 폴더에는 방향 미리보기 catalog가 없어 로그만 분석했습니다. (" + ex.Message + ")");
+                }
+
+                if (messages.Count == 0)
+                {
+                    throw new InvalidOperationException("분석할 학습 로그나 catalog 파일을 찾지 못했습니다.");
+                }
+
+                var analysisText = string.Join(Environment.NewLine + Environment.NewLine, messages);
+                AppendLog("학습 로그 분석: " + string.Join(" / ", messages));
+                SaveTrainingAnalysisSummary(dialog.SelectedPath, analysisText);
+                MessageBox.Show(this, analysisText, "학습 로그 분석", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LayoutTrainPanel();
+                if (directionLoaded)
+                {
+                    picFrame.Invalidate();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("학습 로그/방향 데이터를 분석하지 못했습니다: " + ex.Message, "학습 로그 분석", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void SaveTrainingAnalysisSummary(string selectedPath, string summary)
+        {
+            try
+            {
+                var folder = ResolveTrainingRunFolder(selectedPath);
+                if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                {
+                    folder = Directory.Exists(selectedPath) ? selectedPath : rootFolder;
+                }
+                if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                {
+                    return;
+                }
+
+                var fileName = "teamapp_training_analysis_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".txt";
+                var path = Path.Combine(folder, fileName);
+                File.WriteAllText(path, summary, Encoding.UTF8);
+                AppendLog("학습 분석 로그 저장: " + path);
+
+                var answer = MessageBox.Show(this, "학습 분석 로그를 저장했습니다. 바로 열까요?" + Environment.NewLine + path, "학습 로그 분석", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (answer == DialogResult.Yes)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = path,
+                        UseShellExecute = true
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("학습 분석 로그 저장 실패: " + ex.Message);
+            }
+        }
+
+        private bool TryAnalyzeTrainingLogFolder(string selectedPath, out string summary)
+        {
+            summary = string.Empty;
+            try
+            {
+                var folder = ResolveTrainingRunFolder(selectedPath);
+                if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                {
+                    return false;
+                }
+
+                var progressPath = Path.Combine(folder, "progress.json");
+                var logPath = Directory.GetFiles(folder, "console*.log", SearchOption.TopDirectoryOnly)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .FirstOrDefault();
+
+                var parts = new List<string> { "학습 로그 폴더: " + folder };
+                if (File.Exists(progressPath))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(progressPath, Encoding.UTF8));
+                    var root = doc.RootElement;
+                    var state = root.TryGetProperty("state", out var stateValue) ? stateValue.GetString() : string.Empty;
+                    var percent = root.TryGetProperty("progressPercent", out var percentValue) && percentValue.ValueKind == JsonValueKind.Number ? percentValue.GetInt32() : 0;
+                    var epoch = root.TryGetProperty("epoch", out var epochValue) && epochValue.ValueKind == JsonValueKind.Number ? epochValue.GetInt32() : 0;
+                    var totalEpochs = root.TryGetProperty("totalEpochs", out var totalEpochValue) && totalEpochValue.ValueKind == JsonValueKind.Number ? totalEpochValue.GetInt32() : 0;
+                    var loss = root.TryGetProperty("loss", out var lossValue) ? lossValue.GetString() : string.Empty;
+                    parts.Add($"상태: {state ?? "알 수 없음"}, 진행률: {percent}%, epoch: {epoch}/{totalEpochs}");
+                    if (!string.IsNullOrWhiteSpace(loss))
+                    {
+                        parts.Add("최근 손실: " + loss);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(logPath) && File.Exists(logPath))
+                {
+                    var logText = File.ReadAllText(logPath, Encoding.UTF8);
+                    if (logText.IndexOf("Finished training", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        parts.Add("결과: 학습 완료 로그가 감지되었습니다.");
+                    }
+                    else if (logText.IndexOf("KeyboardInterrupt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             logText.IndexOf("Process exit code: 130", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        parts.Add("결과: 사용자가 중간 중지한 학습 로그입니다. progress.json과 interrupted 모델을 확인하세요.");
+                    }
+                    else if (logText.IndexOf("Traceback", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        parts.Add("결과: 오류 종료 로그가 있습니다. console 로그의 마지막 Traceback을 확인하세요.");
+                    }
+                    parts.Add("로그 파일: " + Path.GetFileName(logPath));
+                }
+
+                summary = string.Join(Environment.NewLine, parts);
+                return parts.Count > 1 || !string.IsNullOrWhiteSpace(logPath);
+            }
+            catch (Exception ex)
+            {
+                summary = "학습 로그 분석 중 오류: " + ex.Message;
+                return true;
+            }
+        }
+
+        private static string ResolveTrainingRunFolder(string selectedPath)
+        {
+            if (string.IsNullOrWhiteSpace(selectedPath) || !Directory.Exists(selectedPath))
+            {
+                return string.Empty;
+            }
+
+            if (File.Exists(Path.Combine(selectedPath, "progress.json")) ||
+                Directory.GetFiles(selectedPath, "console*.log", SearchOption.TopDirectoryOnly).Length > 0)
+            {
+                return selectedPath;
+            }
+
+            var runsRoot = Path.Combine(selectedPath, "models", "_training_runs");
+            if (!Directory.Exists(runsRoot))
+            {
+                runsRoot = Path.Combine(selectedPath, "_training_runs");
+            }
+            if (Directory.Exists(runsRoot))
+            {
+                return Directory.GetDirectories(runsRoot)
+                    .OrderByDescending(Directory.GetLastWriteTimeUtc)
+                    .FirstOrDefault() ?? string.Empty;
+            }
+
+            return string.Empty;
+        }
+
+        private void LoadTrainingPreviewDirections(string selectedPath)
+        {
+            if (!TryResolveDonkeyFolder(selectedPath, out _, out var previewDataFolder, out _, out var message))
+            {
+                throw new InvalidOperationException(message);
+            }
+
+            var catalogs = GetCatalogFiles(previewDataFolder);
+            if (catalogs.Length == 0)
+            {
+                throw new InvalidOperationException("선택한 폴더에서 catalog 파일을 찾지 못했습니다.");
+            }
+
+            trainingPreviewByImageName.Clear();
+            trainingPreviewByIndex.Clear();
+            trainingPreviewSourceFolder = previewDataFolder;
+
+            var order = 0;
+            foreach (var catalog in catalogs)
+            {
+                var records = ReadCatalogRecords(catalog, order, out order);
+                foreach (var previewRecord in records)
+                {
+                    var angle = previewRecord.PilotAngle ?? previewRecord.Angle;
+                    var throttle = previewRecord.PilotThrottle ?? previewRecord.Throttle;
+                    if (!angle.HasValue)
+                    {
+                        continue;
+                    }
+
+                    var direction = new TrainingPreviewDirection
+                    {
+                        Angle = angle.Value,
+                        Throttle = throttle,
+                        SourceLabel = Path.GetFileName(previewDataFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                    };
+
+                    var name = Path.GetFileName(previewRecord.ImageFile ?? string.Empty);
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        trainingPreviewByImageName[name] = direction;
+                    }
+
+                    trainingPreviewByIndex[previewRecord.Index] = direction;
+                    trainingPreviewByIndex[previewRecord.GlobalOrder] = direction;
+                }
+            }
+
+            if (trainingPreviewByImageName.Count == 0 && trainingPreviewByIndex.Count == 0)
+            {
+                throw new InvalidOperationException("학습 방향으로 사용할 angle/throttle 값을 찾지 못했습니다.");
+            }
+        }
+
+        private string DescribeDirection(double angle)
+        {
+            if (angle <= -0.25) return "좌회전";
+            if (angle >= 0.25) return "우회전";
+            if (Math.Abs(angle) <= 0.06) return "직진";
+            return angle < 0 ? "약한 좌회전" : "약한 우회전";
+        }
+
+        private static string DescribeThrottle(double throttle)
+        {
+            if (throttle < -0.02) return "후진 예측 위험";
+            if (throttle <= 0.03) return "정지/출발 불안정";
+            if (throttle > 0.8) return "과속 후보";
+            return "정상 전진";
+        }
+
+        private static Color ThrottleToOverlayColor(double throttle)
+        {
+            if (throttle < -0.02) return Color.OrangeRed;
+            if (throttle <= 0.03) return Color.Gold;
+            if (throttle > 0.8) return Color.Orange;
+            return Color.LimeGreen;
+        }
+
+        private bool HasTrainedModelFile()
+        {
+            if (string.IsNullOrWhiteSpace(rootFolder))
+            {
+                return false;
+            }
+
+            var models = Path.Combine(rootFolder, "models");
+            return File.Exists(Path.Combine(models, "mypilot.h5")) ||
+                   File.Exists(Path.Combine(models, "mypilot.tflite")) ||
+                   Directory.Exists(models) && Directory.EnumerateFiles(models, "*.h5").Any();
         }
 
         private Rectangle BuildImageRectangle(Point a, Point b)
@@ -2237,6 +2775,214 @@ namespace TeamApp
             ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
             AppendLog($"이미지 영역 가리기 {(autoApplied ? "자동 " : string.Empty)}적용: {success}/{targets.Count}개, 영역={rect}");
             return success > 0;
+        }
+
+        private void btnCannyPreviewAll_Click(object? sender, EventArgs e)
+        {
+            cannyPreviewAll = !cannyPreviewAll;
+            btnCannyPreviewAll.Text = cannyPreviewAll ? "원본 보기" : "전체사진 캐니 미리";
+            btnCannyPreviewAll.BackColor = cannyPreviewAll ? Color.LightSteelBlue : SystemColors.Control;
+            var current = CurrentRecord();
+            if (current != null)
+            {
+                LoadImage(current);
+            }
+            AppendLog(cannyPreviewAll
+                ? "전체 데이터 캐니에지 미리보기를 켰습니다. 실제 이미지 파일은 수정하지 않습니다."
+                : "전체 데이터 캐니에지 미리보기를 껐습니다.");
+        }
+
+        private void btnCanny_Click(object? sender, EventArgs e)
+        {
+            var targets = GetTargetRecordsForBatch();
+            if (targets.Count == 0)
+            {
+                MessageBox.Show("선택사진 캐니 변경을 적용할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var success = 0;
+            foreach (var record in targets)
+            {
+                try
+                {
+                    ApplyCannyEdgeToImageFile(ResolveImagePath(record));
+                    record.Edited = true;
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"캐니 에지 적용 실패: {record.ImageFile} / {ex.Message}");
+                }
+            }
+
+            SaveUiMarks();
+            var current = CurrentRecord();
+            if (current != null)
+            {
+                LoadImage(current);
+            }
+            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
+            AppendLog($"선택사진 캐니 변경 적용: {success}/{targets.Count}개 (적응형 도로선 보존 방식)");
+            if (success == 0)
+            {
+                MessageBox.Show("선택사진 캐니 변경을 적용하지 못했습니다. OpenCvSharp 패키지 복원 여부와 이미지 파일 상태를 확인하세요.", "캐니 에지", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private Bitmap CreateCannyPreviewBitmap(string imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
+            }
+
+            var tempPath = Path.Combine(Path.GetTempPath(), "teamapp_canny_preview_" + Guid.NewGuid().ToString("N") + ".png");
+            try
+            {
+                using var output = CreateCannyRoadEdgeMat(imagePath, 50, 200);
+                if (!OpenCvSharp.Cv2.ImWrite(tempPath, output))
+                {
+                    throw new InvalidOperationException("캐니 미리보기 이미지를 생성하지 못했습니다.");
+                }
+
+                using var stream = File.OpenRead(tempPath);
+                using var image = Image.FromStream(stream);
+                return new Bitmap(image);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                {
+                    // 임시 파일 삭제 실패는 미리보기 동작을 막지 않는다.
+                }
+            }
+        }
+
+        private void ApplyCannyEdgeToImageFile(string imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
+            }
+
+            using var bitmap = CreateCannyRoadEdgeBitmap(imagePath, 50, 200);
+            BackupImageIfNeeded(imagePath);
+            SaveBitmapAtomically(bitmap, imagePath);
+        }
+
+        private Bitmap CreateCannyRoadEdgeBitmap(string imagePath, int lowThreshold, int highThreshold)
+        {
+            using var output = CreateCannyRoadEdgeMat(imagePath, lowThreshold, highThreshold);
+            OpenCvSharp.Cv2.ImEncode(".png", output, out var encoded);
+            using var ms = new MemoryStream(encoded);
+            return new Bitmap(ms);
+        }
+
+        private OpenCvSharp.Mat CreateCannyRoadEdgeMat(string imagePath, int lowThreshold, int highThreshold)
+        {
+            var srcPath = imagePath;
+            try
+            {
+                var editedBackupPath = GetEditedBackupPath(imagePath);
+                if (!string.IsNullOrWhiteSpace(editedBackupPath) && File.Exists(editedBackupPath))
+                {
+                    srcPath = editedBackupPath;
+                }
+            }
+            catch
+            {
+                srcPath = imagePath;
+            }
+
+            using var source = OpenCvSharp.Cv2.ImRead(srcPath, OpenCvSharp.ImreadModes.Color);
+            if (source.Empty())
+            {
+                throw new InvalidOperationException("OpenCV가 이미지를 읽지 못했습니다: " + imagePath);
+            }
+
+            OpenCvSharp.Mat? resized = null;
+            OpenCvSharp.Mat work = source;
+            var scale = 1.0;
+            try
+            {
+                if (source.Width < 320)
+                {
+                    scale = 320.0 / Math.Max(1, source.Width);
+                    var newW = (int)Math.Round(source.Width * scale);
+                    var newH = (int)Math.Round(source.Height * scale);
+                    resized = new OpenCvSharp.Mat();
+                    OpenCvSharp.Cv2.Resize(source, resized, new OpenCvSharp.Size(newW, newH), 0, 0, OpenCvSharp.InterpolationFlags.Linear);
+                    work = resized;
+                }
+
+                using var gray = new OpenCvSharp.Mat();
+                using var blurred = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.CvtColor(work, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
+                OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 0);
+
+                // 팀원 개선사항 반영: 조명 변화가 있는 시뮬레이터 도로에서도 얇은 차선/가장자리선을 살리기 위한 적응형 임계값 방식.
+                using var adaptive = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.AdaptiveThreshold(
+                    blurred,
+                    adaptive,
+                    255,
+                    OpenCvSharp.AdaptiveThresholdTypes.GaussianC,
+                    OpenCvSharp.ThresholdTypes.Binary,
+                    blockSize: 91,
+                    c: -25);
+
+                using var openKernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(3, 3));
+                OpenCvSharp.Cv2.MorphologyEx(adaptive, adaptive, OpenCvSharp.MorphTypes.Open, openKernel);
+
+                using var closeKernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(15, 15));
+                OpenCvSharp.Cv2.MorphologyEx(adaptive, adaptive, OpenCvSharp.MorphTypes.Close, closeKernel);
+
+                OpenCvSharp.Cv2.FindContours(
+                    adaptive,
+                    out OpenCvSharp.Point[][] contours,
+                    out _,
+                    OpenCvSharp.RetrievalModes.External,
+                    OpenCvSharp.ContourApproximationModes.ApproxSimple);
+
+                using var contourEdges = new OpenCvSharp.Mat(work.Size(), OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
+                const double minContourLength = 100.0;
+                foreach (var contour in contours)
+                {
+                    var length = OpenCvSharp.Cv2.ArcLength(contour, closed: false);
+                    if (length > minContourLength)
+                    {
+                        OpenCvSharp.Cv2.DrawContours(contourEdges, new[] { contour }, 0, OpenCvSharp.Scalar.White, 1);
+                    }
+                }
+
+                // 기본 Canny 결과를 보조로 합성해 흰색/노란색 선이 약한 프레임에서도 시각적 단서가 남도록 한다.
+                using var rawEdges = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.Canny(blurred, rawEdges, lowThreshold, highThreshold);
+                using var mergedEdges = new OpenCvSharp.Mat();
+                OpenCvSharp.Cv2.BitwiseOr(contourEdges, rawEdges, mergedEdges);
+
+                using var finalEdges = scale != 1.0 ? new OpenCvSharp.Mat() : mergedEdges.Clone();
+                if (scale != 1.0)
+                {
+                    OpenCvSharp.Cv2.Resize(mergedEdges, finalEdges, new OpenCvSharp.Size(source.Width, source.Height), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                }
+
+                var output = new OpenCvSharp.Mat(source.Size(), OpenCvSharp.MatType.CV_8UC3, OpenCvSharp.Scalar.Black);
+                output.SetTo(new OpenCvSharp.Scalar(255, 255, 255), finalEdges);
+                return output;
+            }
+            finally
+            {
+                resized?.Dispose();
+            }
         }
 
         private void btnReplaceRegion_Click(object? sender, EventArgs e)
@@ -2516,154 +3262,6 @@ namespace TeamApp
             picFrame.Invalidate();
         }
 
-        private void btnCanny_Click(object? sender, EventArgs e)
-        {
-            var targets = GetTargetRecordsForBatch();
-            if (targets.Count == 0)
-            {
-                MessageBox.Show("캐니 에지 변환할 프레임을 체크하거나 선택하세요.", "정보", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            var success = 0;
-            foreach (var record in targets)
-            {
-                try
-                {
-                    ApplyCannyToImageFile(ResolveImagePath(record), 50, 200);
-                    record.Edited = true;
-                    success++;
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"캐니 변환 실패: {record.ImageFile} / {ex.Message}");
-                }
-            }
-
-            SaveUiMarks();
-            var current = CurrentRecord();
-            if (current != null)
-            {
-                LoadImage(current);
-            }
-            ApplyFilters(current?.GlobalOrder ?? targets[0].GlobalOrder);
-            AppendLog($"캐니 에지 적용: {success}/{targets.Count}개 (임계값 50/200)");
-        }
-
-        private void ApplyCannyToImageFile(string imagePath, int lowThreshold, int highThreshold)
-        {
-            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
-            {
-                throw new FileNotFoundException("이미지 파일을 찾을 수 없습니다.", imagePath);
-            }
-
-            var srcPath = imagePath;
-            try
-            {
-                var editedBackupPath = GetEditedBackupPath(imagePath);
-                if (!string.IsNullOrWhiteSpace(editedBackupPath) && File.Exists(editedBackupPath))
-                {
-                    srcPath = editedBackupPath;
-                }
-            }
-            catch
-            {
-                srcPath = imagePath;
-            }
-
-            using var src = OpenCvSharp.Cv2.ImRead(srcPath, OpenCvSharp.ImreadModes.Color);
-            if (src.Empty())
-            {
-                throw new InvalidOperationException("이미지를 열 수 없습니다: " + imagePath);
-            }
-
-            var work = src;
-            var scale = 1.0;
-            if (src.Width < 320)
-            {
-                scale = 320.0 / src.Width;
-                var newW = (int)Math.Round(src.Width * scale);
-                var newH = (int)Math.Round(src.Height * scale);
-                work = new OpenCvSharp.Mat();
-                OpenCvSharp.Cv2.Resize(src, work, new OpenCvSharp.Size(newW, newH), 0, 0, OpenCvSharp.InterpolationFlags.Linear);
-            }
-
-            using var gray = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.CvtColor(work, gray, OpenCvSharp.ColorConversionCodes.BGR2GRAY);
-
-            using var blurred = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.GaussianBlur(gray, blurred, new OpenCvSharp.Size(5, 5), 0);
-
-            // [핵심 변경 1] 적응형 이진화 (Adaptive Threshold)
-            // 조명이 어두운 구역과 밝은 구역 각각에 맞는 기준을 자동으로 설정합니다.
-            using var thresh = new OpenCvSharp.Mat();
-            // blockSize: 51 (51x51 픽셀 단위로 평가. 선의 두께보다 충분히 커야 함)
-            // C: -15 (해당 구역 평균 밝기보다 15 이상 더 밝은 픽셀(흰색 선)만 추출)
-            OpenCvSharp.Cv2.AdaptiveThreshold(blurred, thresh, 255,
-                OpenCvSharp.AdaptiveThresholdTypes.GaussianC,
-                OpenCvSharp.ThresholdTypes.Binary,
-                blockSize: 91,
-                c: -25);
-
-            // [핵심 변경 2] 얇은 선 보호를 위한 모폴로지 Open 완화
-            // (5, 5) 대신 (3, 3)을 사용하여 얇게 찍힌 왼쪽 선이 소멸되는 것을 막습니다.
-            using var openKernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(3, 3));
-            OpenCvSharp.Cv2.MorphologyEx(thresh, thresh, OpenCvSharp.MorphTypes.Open, openKernel);
-
-            // [핵심 변경 3] 끊어진 선 강하게 이어주기
-            using var closeKernel = OpenCvSharp.Cv2.GetStructuringElement(OpenCvSharp.MorphShapes.Ellipse, new OpenCvSharp.Size(15, 15));
-            OpenCvSharp.Cv2.MorphologyEx(thresh, thresh, OpenCvSharp.MorphTypes.Close, closeKernel);
-
-            // 최외곽선 추출
-            OpenCvSharp.Cv2.FindContours(thresh, out OpenCvSharp.Point[][] contours, out OpenCvSharp.HierarchyIndex[] hierarchy,
-                OpenCvSharp.RetrievalModes.External, OpenCvSharp.ContourApproximationModes.ApproxSimple);
-
-            using var edges = new OpenCvSharp.Mat(work.Size(), OpenCvSharp.MatType.CV_8UC1, OpenCvSharp.Scalar.Black);
-
-            // [핵심 변경 4] 왼쪽 선을 살리기 위해 길이 기준을 100으로 낮춤
-            double minContourLength = 100.0;
-
-            foreach (var contour in contours)
-            {
-                double length = OpenCvSharp.Cv2.ArcLength(contour, closed: false);
-                if (length > minContourLength)
-                {
-                    OpenCvSharp.Cv2.DrawContours(edges, new[] { contour }, 0, OpenCvSharp.Scalar.White, 1);
-                }
-            }
-
-            OpenCvSharp.Mat finalEdges = edges;
-            if (scale != 1.0)
-            {
-                var origSize = new OpenCvSharp.Size(src.Width, src.Height);
-                var downscaled = new OpenCvSharp.Mat();
-                OpenCvSharp.Cv2.Resize(edges, downscaled, origSize, 0, 0, OpenCvSharp.InterpolationFlags.Area);
-                finalEdges = downscaled;
-            }
-
-            try
-            {
-                using var composed = new Mat(src.Size(), MatType.CV_8UC3, Scalar.Black);
-                composed.SetTo(new Scalar(255, 255, 255), finalEdges);
-
-                Bitmap bitmap;
-                byte[] encoded;
-                OpenCvSharp.Cv2.ImEncode(".png", composed, out encoded);
-                using (var ms = new MemoryStream(encoded))
-                {
-                    bitmap = new Bitmap(ms);
-                }
-                BackupImageIfNeeded(imagePath);
-                SaveBitmapAtomically(bitmap, imagePath);
-                bitmap.Dispose();
-            }
-            finally
-            {
-                if (!ReferenceEquals(work, src)) work.Dispose();
-                if (!ReferenceEquals(finalEdges, edges)) finalEdges.Dispose();
-            }
-        }
-
         private static Color CalculateAverageColor(Bitmap bitmap, Rectangle rect)
         {
             long r = 0, g = 0, b = 0, count = 0;
@@ -2928,6 +3526,74 @@ namespace TeamApp
                 DetectAnomalies(false);
             }
 
+            var records = BuildTrainingCandidateRecords(datasetModeIndex, excludeAnomalyFromSelection);
+            if (records.Count == 0)
+            {
+                throw new InvalidOperationException("학습 데이터셋으로 내보낼 프레임이 없습니다.");
+            }
+
+            return CreateTrainingDataset(records, modeName);
+        }
+
+        internal TrainingDataMetrics GetTrainingDataMetricsForDialog(int datasetModeIndex, bool excludeAnomalyFromSelection)
+        {
+            if ((datasetModeIndex == 1 || (datasetModeIndex == 2 && excludeAnomalyFromSelection)) &&
+                !allFrames.Any(record => record.IsAnomaly || record.MovingAverage.HasValue || record.Volatility.HasValue))
+            {
+                DetectAnomalies(false);
+            }
+
+            var candidates = BuildTrainingCandidateRecords(datasetModeIndex, excludeAnomalyFromSelection);
+            var total = allFrames.Count;
+            var deleted = allFrames.Count(record => record.Deleted);
+            var edited = allFrames.Count(record => record.Edited);
+            var totalAnomalies = allFrames.Count(record => record.IsAnomaly);
+            var candidateAnomalies = candidates.Count(record => record.IsAnomaly);
+            var positiveThrottle = candidates.Count(record => record.Throttle.HasValue && record.Throttle.Value > 0);
+            var zeroOrReverse = candidates.Count(record => !record.Throttle.HasValue || record.Throttle.Value <= 0);
+            var readable = 0;
+            foreach (var record in candidates)
+            {
+                var path = ResolveImagePath(record);
+                if (File.Exists(path) && IsReadableImageFile(path))
+                {
+                    readable++;
+                }
+            }
+
+            var throttles = candidates.Where(record => record.Throttle.HasValue).Select(record => record.Throttle!.Value).ToList();
+            var avgThrottle = throttles.Count > 0 ? throttles.Average() : 0;
+            var minThrottle = throttles.Count > 0 ? throttles.Min() : 0;
+            var maxThrottle = throttles.Count > 0 ? throttles.Max() : 0;
+
+            var dataIntegrity = candidates.Count == 0 ? 0 : ClampInt((int)Math.Round(readable * 100.0 / candidates.Count), 0, 100);
+            var throttleQuality = candidates.Count == 0 ? 0 : ClampInt((int)Math.Round(positiveThrottle * 100.0 / candidates.Count), 0, 100);
+            var anomalyQuality = candidates.Count == 0 ? 0 : ClampInt((int)Math.Round((candidates.Count - candidateAnomalies) * 100.0 / candidates.Count), 0, 100);
+            var expected = candidates.Count == 0 ? 0 : ClampInt((int)Math.Round(dataIntegrity * 0.45 + throttleQuality * 0.30 + anomalyQuality * 0.25), 0, 100);
+
+            return new TrainingDataMetrics
+            {
+                TotalFrames = total,
+                CandidateFrames = candidates.Count,
+                UsableFrames = readable,
+                DeletedFrames = deleted,
+                EditedFrames = edited,
+                TotalAnomalyFrames = totalAnomalies,
+                CandidateAnomalyFrames = candidateAnomalies,
+                PositiveThrottleFrames = positiveThrottle,
+                ZeroOrReverseThrottleFrames = zeroOrReverse,
+                AverageThrottle = avgThrottle,
+                MinThrottle = minThrottle,
+                MaxThrottle = maxThrottle,
+                DataIntegrityPercent = dataIntegrity,
+                ThrottleQualityPercent = throttleQuality,
+                AnomalyQualityPercent = anomalyQuality,
+                ExpectedPercent = expected
+            };
+        }
+
+        private List<FrameRecord> BuildTrainingCandidateRecords(int datasetModeIndex, bool excludeAnomalyFromSelection)
+        {
             List<FrameRecord> records = datasetModeIndex switch
             {
                 1 => allFrames.Where(record => !record.Deleted && !record.IsAnomaly).ToList(),
@@ -2940,13 +3606,7 @@ namespace TeamApp
                 records = records.Where(record => !record.IsAnomaly).ToList();
             }
 
-            records = records.OrderBy(record => record.GlobalOrder).ToList();
-            if (records.Count == 0)
-            {
-                throw new InvalidOperationException("학습 데이터셋으로 내보낼 프레임이 없습니다.");
-            }
-
-            return CreateTrainingDataset(records, modeName);
+            return records.OrderBy(record => record.GlobalOrder).ToList();
         }
 
         internal bool TryMapTrainingPathToLocalFile(string trainingPath, out string localPath)
@@ -3018,8 +3678,16 @@ namespace TeamApp
             }
 
             RefreshTrainingPathDefaults(false);
-            using var dialog = new Form2(this);
-            dialog.ShowDialog(this);
+            if (trainingDialog == null || trainingDialog.IsDisposed)
+            {
+                trainingDialog = new Form2(this);
+                trainingDialog.FormClosed += (_, _) => trainingDialog = null;
+                trainingDialog.Show(this);
+            }
+            else
+            {
+                trainingDialog.Activate();
+            }
         }
 
         internal string BuildTrainingCommand(string environment, string dataPath, string modelPath, string extraArgs, string activateCommand, string sshUser, string sshHost, string sshPort, string remoteWorkDir, string sshPassword)
@@ -3473,6 +4141,27 @@ namespace TeamApp
                    Regex.IsMatch(command, @"(?i)\s+-o\s+NumberOfPasswordPrompts\s*=\s*0");
         }
 
+        internal bool StopInteractiveTrainingProcess()
+        {
+            lock (activeInteractiveTrainingProcessLock)
+            {
+                if (activeInteractiveTrainingProcess == null || activeInteractiveTrainingProcess.HasExited)
+                {
+                    return false;
+                }
+
+                try
+                {
+                    activeInteractiveTrainingProcess.Kill(true);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
         internal Task<int> RunInteractiveConsoleCommandAsync(string command)
         {
             var workingDirectory = Directory.Exists(rootFolder) ? rootFolder : dataFolder;
@@ -3482,7 +4171,7 @@ namespace TeamApp
                 shell = "cmd.exe";
             }
 
-            var commandWithExit = command + " & set TEAMAPP_EXIT=!ERRORLEVEL! & echo. & echo [TeamApp] Process exit code: !TEAMAPP_EXIT! & echo [TeamApp] Press any key to return to the UI... & pause > nul & exit /b !TEAMAPP_EXIT!";
+            var commandWithExit = command + " & set TEAMAPP_EXIT=!ERRORLEVEL! & echo. & echo [TeamApp] Process exit code: !TEAMAPP_EXIT! & echo [TeamApp] Press any key to return to the UI. To stop during training, focus this window and press Ctrl+C & pause > nul & exit /b !TEAMAPP_EXIT!";
             var startInfo = new ProcessStartInfo
             {
                 FileName = shell,
@@ -3495,7 +4184,7 @@ namespace TeamApp
             return RunExternalProcessAsync(startInfo);
         }
 
-        private static Task<int> RunExternalProcessAsync(ProcessStartInfo startInfo)
+        private Task<int> RunExternalProcessAsync(ProcessStartInfo startInfo)
         {
             var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -3519,6 +4208,13 @@ namespace TeamApp
                     }
                     finally
                     {
+                        lock (activeInteractiveTrainingProcessLock)
+                        {
+                            if (ReferenceEquals(activeInteractiveTrainingProcess, process))
+                            {
+                                activeInteractiveTrainingProcess = null;
+                            }
+                        }
                         process.Dispose();
                     }
                 };
@@ -3527,6 +4223,13 @@ namespace TeamApp
                 {
                     process.Dispose();
                     completion.TrySetException(new InvalidOperationException("프로세스를 시작하지 못했습니다."));
+                }
+                else
+                {
+                    lock (activeInteractiveTrainingProcessLock)
+                    {
+                        activeInteractiveTrainingProcess = process;
+                    }
                 }
             }
             catch (Exception ex)
@@ -3959,7 +4662,7 @@ namespace TeamApp
                     return true;
                 }
 
-                if ((ch == '&' || ch == '|') && i + 1 < command.Length && command[i + 1] == ch)
+                if ((ch == '&' || ch == '|' ) && i + 1 < command.Length && command[i + 1] == ch)
                 {
                     return true;
                 }
@@ -4330,6 +5033,13 @@ namespace TeamApp
             return string.IsNullOrWhiteSpace(value) ? "-" : value;
         }
 
+        private sealed class TrainingPreviewDirection
+        {
+            public double Angle { get; set; }
+            public double? Throttle { get; set; }
+            public string SourceLabel { get; set; } = string.Empty;
+        }
+
         private sealed class FrameRecord
         {
             public int GlobalOrder { get; set; }
@@ -4340,6 +5050,10 @@ namespace TeamApp
             public string SessionId { get; set; } = string.Empty;
             public long? TimestampMs { get; set; }
             public string ImageFile { get; set; } = string.Empty;
+            public double? UserAngle { get; set; }
+            public double? UserThrottle { get; set; }
+            public double? PilotAngle { get; set; }
+            public double? PilotThrottle { get; set; }
             public double? Angle { get; set; }
             public double? Throttle { get; set; }
             public string Mode { get; set; } = string.Empty;
@@ -4351,6 +5065,26 @@ namespace TeamApp
             public double? Volatility { get; set; }
             public double AnomalyScore { get; set; }
         }
+    }
+
+    internal sealed class TrainingDataMetrics
+    {
+        public int TotalFrames { get; set; }
+        public int CandidateFrames { get; set; }
+        public int UsableFrames { get; set; }
+        public int DeletedFrames { get; set; }
+        public int EditedFrames { get; set; }
+        public int TotalAnomalyFrames { get; set; }
+        public int CandidateAnomalyFrames { get; set; }
+        public int PositiveThrottleFrames { get; set; }
+        public int ZeroOrReverseThrottleFrames { get; set; }
+        public double AverageThrottle { get; set; }
+        public double MinThrottle { get; set; }
+        public double MaxThrottle { get; set; }
+        public int DataIntegrityPercent { get; set; }
+        public int ThrottleQualityPercent { get; set; }
+        public int AnomalyQualityPercent { get; set; }
+        public int ExpectedPercent { get; set; }
     }
 
     internal readonly struct FrameListVisualState
@@ -4371,8 +5105,6 @@ namespace TeamApp
 
     internal sealed class ColoredCheckedListBox : CheckedListBox
     {
-        private int lastCheckAnchorIndex = -1;
-
         public ColoredCheckedListBox()
         {
             DrawMode = DrawMode.OwnerDrawFixed;
@@ -4380,49 +5112,36 @@ namespace TeamApp
         }
 
         public Func<int, FrameListVisualState>? ResolveVisualState { get; set; }
+        private int lastCheckClickIndex = -1;
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             var index = IndexFromPoint(e.Location);
             if (index >= 0 && index < Items.Count && IsPointInsideCheckBox(index, e.Location))
             {
-                // preserve previous selection to use as anchor when shift-clicking
-                var previousSelected = SelectedIndex;
+                Focus();
                 SelectedIndex = index;
-
-                var shiftPressed = (Control.ModifierKeys & Keys.Shift) == Keys.Shift;
-
-                // Determine an anchor index: prefer the last recorded anchor, otherwise previous selection, otherwise clicked index
-                var anchor = lastCheckAnchorIndex >= 0 ? lastCheckAnchorIndex : (previousSelected >= 0 ? previousSelected : index);
-
-                if (shiftPressed && anchor >= 0 && anchor != index)
+                var nextState = !GetItemChecked(index);
+                if ((ModifierKeys & Keys.Shift) == Keys.Shift && lastCheckClickIndex >= 0 && lastCheckClickIndex < Items.Count)
                 {
-                    var start = Math.Min(anchor, index);
-                    var end = Math.Max(anchor, index);
-                    // Invert checked state for the whole range
+                    var start = Math.Min(lastCheckClickIndex, index);
+                    var end = Math.Max(lastCheckClickIndex, index);
                     for (var i = start; i <= end; i++)
                     {
-                        SetItemChecked(i, !GetItemChecked(i));
+                        SetItemChecked(i, nextState);
                     }
                     Invalidate();
-                    // keep the original anchor so multiple shift-clicks are relative to the same start
-                    return;
                 }
-
-                // Normal single toggle
-                SetItemChecked(index, !GetItemChecked(index));
-                Invalidate(GetItemRectangle(index));
-                // Update anchor for future shift operations
-                lastCheckAnchorIndex = index;
+                else
+                {
+                    SetItemChecked(index, nextState);
+                    Invalidate(GetItemRectangle(index));
+                }
+                lastCheckClickIndex = index;
                 return;
             }
 
             base.OnMouseDown(e);
-            // If user clicked non-checkbox area without shift, update anchor to that item so subsequent shift-clicks use it
-            if (index >= 0 && index < Items.Count && (Control.ModifierKeys & Keys.Shift) != Keys.Shift)
-            {
-                lastCheckAnchorIndex = index;
-            }
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
