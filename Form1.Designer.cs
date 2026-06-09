@@ -104,6 +104,11 @@ namespace TeamApp
             btnCheckDonkey = new Button();
             grpLog = new GroupBox();
             txtLog = new TextBox();
+            btnCanny = new Button();
+            btnCannyPreviewAll = new Button();
+            chkDrivingOverlay = new CheckBox();
+            chkTrainedDirectionOverlay = new CheckBox();
+            btnLoadTrainingPreview = new Button();
             grpList.SuspendLayout();
             grpPreview.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picFrame).BeginInit();
@@ -254,6 +259,10 @@ namespace TeamApp
             // 
             // grpImageEdit
             // 
+            grpImageEdit.Controls.Add(btnCanny);
+            grpImageEdit.Controls.Add(btnCannyPreviewAll);
+            grpImageEdit.Controls.Add(chkDrivingOverlay);
+            grpImageEdit.Controls.Add(chkTrainedDirectionOverlay);
             grpImageEdit.Controls.Add(lblEditHint);
             grpImageEdit.Controls.Add(cmbMaskMode);
             grpImageEdit.Controls.Add(btnMaskRegion);
@@ -262,7 +271,7 @@ namespace TeamApp
             grpImageEdit.Controls.Add(btnRestoreImage);
             grpImageEdit.Location = new Point(12, 298);
             grpImageEdit.Name = "grpImageEdit";
-            grpImageEdit.Size = new Size(506, 78);
+            grpImageEdit.Size = new Size(506, 112);
             grpImageEdit.TabIndex = 1;
             grpImageEdit.TabStop = false;
             grpImageEdit.Text = "이미지 부분 가리기 / 바꾸기";
@@ -272,7 +281,7 @@ namespace TeamApp
             lblEditHint.AutoEllipsis = true;
             lblEditHint.Location = new Point(10, 20);
             lblEditHint.Name = "lblEditHint";
-            lblEditHint.Size = new Size(490, 18);
+            lblEditHint.Size = new Size(486, 18);
             lblEditHint.TabIndex = 0;
             lblEditHint.Text = "이미지 위에서 마우스로 드래그해 영역을 선택한 뒤 편집 버튼을 누르세요.";
             // 
@@ -281,14 +290,14 @@ namespace TeamApp
             cmbMaskMode.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbMaskMode.FormattingEnabled = true;
             cmbMaskMode.Items.AddRange(new object[] { "검정", "흰색", "회색", "평균색" });
-            cmbMaskMode.Location = new Point(10, 44);
+            cmbMaskMode.Location = new Point(10, 76);
             cmbMaskMode.Name = "cmbMaskMode";
             cmbMaskMode.Size = new Size(80, 23);
             cmbMaskMode.TabIndex = 1;
             // 
             // btnMaskRegion
             // 
-            btnMaskRegion.Location = new Point(98, 42);
+            btnMaskRegion.Location = new Point(98, 74);
             btnMaskRegion.Name = "btnMaskRegion";
             btnMaskRegion.Size = new Size(85, 27);
             btnMaskRegion.TabIndex = 2;
@@ -298,7 +307,7 @@ namespace TeamApp
             // 
             // btnReplaceRegion
             // 
-            btnReplaceRegion.Location = new Point(190, 42);
+            btnReplaceRegion.Location = new Point(196, 74);
             btnReplaceRegion.Name = "btnReplaceRegion";
             btnReplaceRegion.Size = new Size(95, 27);
             btnReplaceRegion.TabIndex = 3;
@@ -308,7 +317,7 @@ namespace TeamApp
             // 
             // btnClearSelection
             // 
-            btnClearSelection.Location = new Point(292, 42);
+            btnClearSelection.Location = new Point(306, 74);
             btnClearSelection.Name = "btnClearSelection";
             btnClearSelection.Size = new Size(82, 27);
             btnClearSelection.TabIndex = 4;
@@ -318,7 +327,7 @@ namespace TeamApp
             // 
             // btnRestoreImage
             // 
-            btnRestoreImage.Location = new Point(382, 42);
+            btnRestoreImage.Location = new Point(398, 74);
             btnRestoreImage.Name = "btnRestoreImage";
             btnRestoreImage.Size = new Size(92, 27);
             btnRestoreImage.TabIndex = 5;
@@ -330,7 +339,7 @@ namespace TeamApp
             // 
             grpDeleteOps.Controls.Add(btnDelete);
             grpDeleteOps.Controls.Add(btnUndo);
-            grpDeleteOps.Location = new Point(12, 384);
+            grpDeleteOps.Location = new Point(12, 418);
             grpDeleteOps.Name = "grpDeleteOps";
             grpDeleteOps.Size = new Size(506, 58);
             grpDeleteOps.TabIndex = 2;
@@ -789,75 +798,88 @@ namespace TeamApp
             // 
             // grpTrain
             // 
-            grpTrain.Controls.Add(lblCommand);
-            grpTrain.Controls.Add(chkManualCommandEdit);
-            grpTrain.Controls.Add(txtTrainCommand);
+            // 구형 학습 명령 UI는 Form2로 이동했으므로 디자이너 화면에 추가하지 않습니다.
             grpTrain.Controls.Add(btnTrainingPaths);
-            grpTrain.Controls.Add(btnTrain);
+            grpTrain.Controls.Add(btnLoadTrainingPreview);
             grpTrain.Controls.Add(lblHint);
             grpTrain.Location = new Point(832, 552);
             grpTrain.Name = "grpTrain";
-            grpTrain.Size = new Size(380, 210);
+            grpTrain.Size = new Size(380, 120);
             grpTrain.TabIndex = 7;
             grpTrain.TabStop = false;
-            grpTrain.Text = "AI 학습 실행(C# -> Python/DonkeyCar)";
+            grpTrain.Text = "AI 학습";
             // 
             // lblCommand
             // 
-            lblCommand.Location = new Point(14, 25);
+            lblCommand.Location = new Point(-200, -200);
             lblCommand.Name = "lblCommand";
-            lblCommand.Size = new Size(100, 20);
+            lblCommand.Size = new Size(1, 1);
             lblCommand.TabIndex = 0;
             lblCommand.Text = "학습 명령";
+            lblCommand.Visible = false;
             // 
             // chkManualCommandEdit
             // 
-            chkManualCommandEdit.Location = new Point(250, 23);
+            chkManualCommandEdit.Location = new Point(-200, -200);
             chkManualCommandEdit.Name = "chkManualCommandEdit";
-            chkManualCommandEdit.Size = new Size(115, 24);
+            chkManualCommandEdit.Size = new Size(1, 1);
             chkManualCommandEdit.TabIndex = 1;
             chkManualCommandEdit.Text = "수동 편집";
             chkManualCommandEdit.UseVisualStyleBackColor = true;
             chkManualCommandEdit.CheckedChanged += chkManualCommandEdit_CheckedChanged;
+            chkManualCommandEdit.Visible = false;
             // 
             // txtTrainCommand
             // 
-            txtTrainCommand.Location = new Point(14, 48);
+            txtTrainCommand.Location = new Point(-200, -200);
             txtTrainCommand.Multiline = true;
             txtTrainCommand.Name = "txtTrainCommand";
             txtTrainCommand.ReadOnly = true;
             txtTrainCommand.ScrollBars = ScrollBars.Vertical;
-            txtTrainCommand.Size = new Size(350, 58);
+            txtTrainCommand.Size = new Size(1, 1);
             txtTrainCommand.TabIndex = 1;
             txtTrainCommand.Text = "먼저 [학습 명령 생성] 버튼으로 실행 환경과 경로를 선택하세요.";
+            txtTrainCommand.Visible = false;
             // 
             // btnTrainingPaths
             // 
-            btnTrainingPaths.Location = new Point(14, 114);
+            btnTrainingPaths.Location = new Point(14, 28);
             btnTrainingPaths.Name = "btnTrainingPaths";
-            btnTrainingPaths.Size = new Size(132, 30);
+            btnTrainingPaths.Size = new Size(164, 38);
             btnTrainingPaths.TabIndex = 4;
-            btnTrainingPaths.Text = "학습 명령 생성";
+            btnTrainingPaths.Text = "AI 학습";
             btnTrainingPaths.UseVisualStyleBackColor = true;
             btnTrainingPaths.Click += btnTrainingPaths_Click;
             // 
+            // 
+            // btnLoadTrainingPreview
+            // 
+            btnLoadTrainingPreview.Location = new Point(190, 28);
+            btnLoadTrainingPreview.Name = "btnLoadTrainingPreview";
+            btnLoadTrainingPreview.Size = new Size(174, 38);
+            btnLoadTrainingPreview.TabIndex = 5;
+            btnLoadTrainingPreview.Text = "학습 로그 분석";
+            btnLoadTrainingPreview.UseVisualStyleBackColor = true;
+            btnLoadTrainingPreview.Click += btnLoadTrainingPreview_Click;
+            // 
             // btnTrain
             // 
-            btnTrain.Location = new Point(154, 114);
+            btnTrain.Location = new Point(-200, -200);
             btnTrain.Name = "btnTrain";
-            btnTrain.Size = new Size(104, 30);
+            btnTrain.Size = new Size(1, 1);
             btnTrain.TabIndex = 2;
             btnTrain.Text = "학습 실행";
             btnTrain.UseVisualStyleBackColor = true;
             btnTrain.Click += btnTrain_Click;
+            btnTrain.Visible = false;
             // 
             // lblHint
             // 
-            lblHint.Location = new Point(14, 150);
+            lblHint.Location = new Point(14, 74);
             lblHint.Name = "lblHint";
-            lblHint.Size = new Size(350, 44);
+            lblHint.Size = new Size(350, 36);
             lblHint.TabIndex = 5;
-            lblHint.Text = "먼저 [학습 명령 생성]을 눌러 환경/경로를 확정하세요. 수동 편집은 체크 후 가능합니다.";
+            lblHint.Text = "AI 학습 창에서 환경/명령/성공률을 관리합니다. 학습 로그 분석으로 진행 결과와 방향 프리뷰를 확인하세요.";
             // 
             // btnCheckDonkey
             // 
@@ -872,7 +894,7 @@ namespace TeamApp
             // grpLog
             // 
             grpLog.Controls.Add(txtLog);
-            grpLog.Location = new Point(832, 752);
+            grpLog.Location = new Point(832, 682);
             grpLog.Name = "grpLog";
             grpLog.Size = new Size(380, 127);
             grpLog.TabIndex = 8;
@@ -888,6 +910,50 @@ namespace TeamApp
             txtLog.ScrollBars = ScrollBars.Vertical;
             txtLog.Size = new Size(360, 115);
             txtLog.TabIndex = 0;
+            // 
+            // btnCanny
+            // 
+            btnCanny.Location = new Point(356, 42);
+            btnCanny.Name = "btnCanny";
+            btnCanny.Size = new Size(138, 24);
+            btnCanny.TabIndex = 6;
+            btnCanny.Text = "선택사진 캐니 변경";
+            btnCanny.UseVisualStyleBackColor = true;
+            btnCanny.Click += btnCanny_Click;
+            // 
+            // btnCannyPreviewAll
+            // 
+            btnCannyPreviewAll.Location = new Point(216, 42);
+            btnCannyPreviewAll.Name = "btnCannyPreviewAll";
+            btnCannyPreviewAll.Size = new Size(132, 24);
+            btnCannyPreviewAll.TabIndex = 7;
+            btnCannyPreviewAll.Text = "전체사진 캐니 미리";
+            btnCannyPreviewAll.UseVisualStyleBackColor = true;
+            btnCannyPreviewAll.Click += btnCannyPreviewAll_Click;
+            // 
+            // chkDrivingOverlay
+            // 
+            chkDrivingOverlay.Checked = true;
+            chkDrivingOverlay.CheckState = CheckState.Checked;
+            chkDrivingOverlay.Location = new Point(10, 42);
+            chkDrivingOverlay.Name = "chkDrivingOverlay";
+            chkDrivingOverlay.Size = new Size(104, 24);
+            chkDrivingOverlay.TabIndex = 8;
+            chkDrivingOverlay.Text = "방향/스로틀";
+            chkDrivingOverlay.UseVisualStyleBackColor = true;
+            chkDrivingOverlay.CheckedChanged += chkDrivingOverlay_CheckedChanged;
+            // 
+            // chkTrainedDirectionOverlay
+            // 
+            chkTrainedDirectionOverlay.Checked = true;
+            chkTrainedDirectionOverlay.CheckState = CheckState.Checked;
+            chkTrainedDirectionOverlay.Location = new Point(122, 42);
+            chkTrainedDirectionOverlay.Name = "chkTrainedDirectionOverlay";
+            chkTrainedDirectionOverlay.Size = new Size(90, 24);
+            chkTrainedDirectionOverlay.TabIndex = 9;
+            chkTrainedDirectionOverlay.Text = "학습 방향";
+            chkTrainedDirectionOverlay.UseVisualStyleBackColor = true;
+            chkTrainedDirectionOverlay.CheckedChanged += chkTrainedDirectionOverlay_CheckedChanged;
             // 
             // Form1
             // 
@@ -1009,5 +1075,10 @@ namespace TeamApp
         private System.Windows.Forms.Label lblHint = null!;
         private System.Windows.Forms.GroupBox grpLog = null!;
         private System.Windows.Forms.TextBox txtLog = null!;
+        private Button btnCanny;
+        private Button btnCannyPreviewAll = null!;
+        private CheckBox chkDrivingOverlay = null!;
+        private CheckBox chkTrainedDirectionOverlay = null!;
+        private Button btnLoadTrainingPreview = null!;
     }
 }

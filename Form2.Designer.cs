@@ -11,7 +11,7 @@ namespace TeamApp
         private Label lblGuide = null!;
         private GroupBox resultBox = null!;
         private Label lblScore = null!;
-        private Label lblFeedback = null!;
+        private TextBox lblFeedback = null!;
         private GroupBox groupSettings = null!;
         private ComboBox cmbDatasetMode = null!;
         private CheckBox chkExcludeAnomaly = null!;
@@ -37,12 +37,14 @@ namespace TeamApp
         private CheckBox chkManualEdit = null!;
         private TextBox txtCommand = null!;
         private Button btnRun = null!;
+        private Button btnStop = null!;
         private Button btnClose = null!;
+        private Button btnOpenTrainingLog = null!;
         private GroupBox groupLog = null!;
         private TextBox txtLog = null!;
         private GroupBox groupMetrics = null!;
         private Panel pnlMetricsGraph = null!;
-        private Label lblMetricSummary = null!;
+        private TextBox lblMetricSummary = null!;
         private Label lblMetricDataTitle = null!;
         private Label lblMetricThrottleTitle = null!;
         private Label lblMetricAnomalyTitle = null!;
@@ -76,7 +78,7 @@ namespace TeamApp
             lblGuide = new Label();
             resultBox = new GroupBox();
             lblScore = new Label();
-            lblFeedback = new Label();
+            lblFeedback = new TextBox();
             groupSettings = new GroupBox();
             lblDatasetMode = new Label();
             cmbDatasetMode = new ComboBox();
@@ -113,7 +115,9 @@ namespace TeamApp
             chkManualEdit = new CheckBox();
             txtCommand = new TextBox();
             btnRun = new Button();
+            btnStop = new Button();
             btnClose = new Button();
+            btnOpenTrainingLog = new Button();
             groupLog = new GroupBox();
             txtLog = new TextBox();
             groupMetrics = new GroupBox();
@@ -135,7 +139,7 @@ namespace TeamApp
             pnlMetricProcessFill = new Panel();
             lblMetricProcessValue = new Label();
             lblMetricOverall = new Label();
-            lblMetricSummary = new Label();
+            lblMetricSummary = new TextBox();
             resultBox.SuspendLayout();
             groupSettings.SuspendLayout();
             groupRemote.SuspendLayout();
@@ -190,10 +194,16 @@ namespace TeamApp
             // 
             // lblFeedback
             // 
+            lblFeedback.BackColor = SystemColors.Control;
+            lblFeedback.BorderStyle = BorderStyle.None;
             lblFeedback.Location = new Point(16, 86);
+            lblFeedback.Multiline = true;
             lblFeedback.Name = "lblFeedback";
+            lblFeedback.ReadOnly = true;
+            lblFeedback.ScrollBars = ScrollBars.Vertical;
             lblFeedback.Size = new Size(258, 52);
             lblFeedback.TabIndex = 1;
+            lblFeedback.TabStop = false;
             lblFeedback.Text = "명령을 생성한 뒤 학습을 실행하세요.";
             // 
             // groupSettings
@@ -550,15 +560,37 @@ namespace TeamApp
             btnRun.UseVisualStyleBackColor = true;
             btnRun.Click += btnRun_Click;
             // 
+            // btnStop
+            // 
+            btnStop.Enabled = false;
+            btnStop.Font = new Font("맑은 고딕", 10F, FontStyle.Bold, GraphicsUnit.Point, 129);
+            btnStop.Location = new Point(184, 803);
+            btnStop.Name = "btnStop";
+            btnStop.Size = new Size(120, 38);
+            btnStop.TabIndex = 14;
+            btnStop.Text = "학습 중지";
+            btnStop.UseVisualStyleBackColor = true;
+            btnStop.Click += btnStop_Click;
+            // 
             // btnClose
             // 
-            btnClose.Location = new Point(184, 803);
+            btnClose.Location = new Point(314, 803);
             btnClose.Name = "btnClose";
             btnClose.Size = new Size(90, 38);
-            btnClose.TabIndex = 14;
+            btnClose.TabIndex = 15;
             btnClose.Text = "닫기";
             btnClose.UseVisualStyleBackColor = true;
             btnClose.Click += btnClose_Click;
+            // 
+            // btnOpenTrainingLog
+            // 
+            btnOpenTrainingLog.Location = new Point(414, 803);
+            btnOpenTrainingLog.Name = "btnOpenTrainingLog";
+            btnOpenTrainingLog.Size = new Size(130, 38);
+            btnOpenTrainingLog.TabIndex = 16;
+            btnOpenTrainingLog.Text = "저장 로그 열기";
+            btnOpenTrainingLog.UseVisualStyleBackColor = true;
+            btnOpenTrainingLog.Click += btnOpenTrainingLog_Click;
             // 
             // groupLog
             // 
@@ -772,10 +804,16 @@ namespace TeamApp
             // lblMetricSummary
             // 
             lblMetricSummary.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblMetricSummary.BackColor = Color.White;
+            lblMetricSummary.BorderStyle = BorderStyle.FixedSingle;
             lblMetricSummary.Location = new Point(12, 145);
+            lblMetricSummary.Multiline = true;
             lblMetricSummary.Name = "lblMetricSummary";
+            lblMetricSummary.ReadOnly = true;
+            lblMetricSummary.ScrollBars = ScrollBars.Vertical;
             lblMetricSummary.Size = new Size(696, 56);
             lblMetricSummary.TabIndex = 1;
+            lblMetricSummary.TabStop = false;
             lblMetricSummary.Text = "학습 데이터 요약을 계산 중입니다.";
             // 
             // Form2
@@ -798,7 +836,9 @@ namespace TeamApp
             Controls.Add(txtCommand);
             Controls.Add(groupMetrics);
             Controls.Add(btnRun);
+            Controls.Add(btnStop);
             Controls.Add(btnClose);
+            Controls.Add(btnOpenTrainingLog);
             Controls.Add(groupLog);
             Font = new Font("맑은 고딕", 9F, FontStyle.Regular, GraphicsUnit.Point, 129);
             MinimumSize = new Size(980, 800);
